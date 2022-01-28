@@ -1,0 +1,13 @@
+name = "AbstractSphericalHarmonics"
+uuid = "ee470b23-2871-4f3a-b920-8523874a9e46"
+authors = ["Erik Schnetter <schnetter@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+FastSphericalHarmonics = "d335c211-7587-445e-a753-f0b1fb7e445f"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+ssht = "31a37590-cd06-4a2a-bb7b-cc4da623985e"
+
+[compat]
+julia = "1.6"
