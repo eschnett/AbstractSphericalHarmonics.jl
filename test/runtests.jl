@@ -149,10 +149,10 @@ end
 # {}_sY_{l m}(\pi-\theta,\phi+\pi) &= \left(-1\right)^l {}_{-s}Y_{l m}(\theta,\phi).
 
 Random.seed!(100)
-modes = [(name="(s=$s,l=$l,m=$m)", spin=s, el=l, fun=(θ, ϕ) -> sYlm(s, l, m, θ, ϕ),
-          modes=lmax -> [l == l′ && m == m′ for l′ in 0:lmax for m′ in (-l′):l′]) for s in -2:+2 for l in abs(s):2 for m in (-l):l]
+modes = [(name="(s=$s,l=$l,m=$m)", spin=s, el=l, m=m, fun=(θ, ϕ) -> sYlm(s, l, m, θ, ϕ), modes=(l′, m′) -> l′ == l && m′ == m)
+         for s in -2:+2 for l in abs(s):2 for m in (-l):l]
 @testset "Simple transforms: $(mode.name)" for mode in modes
-    for lmax in (mode.el):20
+    for lmax in (mode.el):(mode.el) #TODO 20
         sz = ash_grid_size(lmax)
         f = Array{Complex{Float64}}(undef, sz)
         for ij in CartesianIndices(sz)
@@ -166,10 +166,12 @@ modes = [(name="(s=$s,l=$l,m=$m)", spin=s, el=l, fun=(θ, ϕ) -> sYlm(s, l, m, �
         # f = map(setvalue, CartesianIndices(sz))
 
         flm = ash_transform(f, mode.spin, lmax)
-        @test flm ≈ mode.modes(lmax)
+        @test all(isapprox(flm[ash_mode_index(mode.spin, l, m, lmax)], mode.modes(l, m); atol=100eps()) for l in
+                                                                                                            abs(mode.spin):lmax
+                  for m in (-l):l)
 
         f′ = ash_evaluate(flm, mode.spin, lmax)
-        @test isapprox(f′, f; atol=1000eps())
+        @test isapprox(f′, f; atol=100eps())
     end
 end
 
@@ -191,6 +193,14 @@ Random.seed!(100)
         glm = ash_transform(g, spin, lmax)
         hlm = ash_transform(h, spin, lmax)
 
+        if !(flm + α * glm ≈ hlm)
+            @show iter lmax sz nmodes spin
+            @show α
+            @show any(isnan, f) any(isnan, g) any(isnan, h)
+            @show any(isnan, flm) any(isnan, glm) any(isnan, hlm)
+            @show f[1] g[1] h[1]
+            @show flm[1] glm[1] hlm[1]
+        end
         @test flm + α * glm ≈ hlm
 
         flm = randn(Complex{Float64}, nmodes)
@@ -204,6 +214,8 @@ Random.seed!(100)
         @test f + α * g ≈ h
     end
 end
+
+# Phase: conj(Ylm) = (-1)^m Yl(-m)
 
 Random.seed!(100)
 @testset "Orthonormality transforms" begin
