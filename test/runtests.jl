@@ -138,16 +138,6 @@ end
 
 ################################################################################
 
-# TODO: Test phase and parity of sYlm
-#
-# {\displaystyle Y_{\ell }^{m}(\theta ,\phi )\to Y_{\ell }^{m}(\pi -\theta ,\pi +\phi )=(-1)^{\ell }Y_{\ell }^{m}(\theta ,\phi )}
-#
-# <math display="block">Y_\ell^m(\theta,\phi) \to Y_\ell^m(\pi-\theta,\pi+\phi) = (-1)^\ell Y_\ell^m(\theta,\phi)</math>
-#
-# {}_s\bar Y_{l m} &= \left(-1\right)^{s+m}{}_{-s}Y_{l(-m)}\\
-#
-# {}_sY_{l m}(\pi-\theta,\phi+\pi) &= \left(-1\right)^l {}_{-s}Y_{l m}(\theta,\phi).
-
 Random.seed!(100)
 modes = [(name="(s=$s,l=$l,m=$m)", spin=s, el=l, m=m, fun=(θ, ϕ) -> sYlm(s, l, m, θ, ϕ), modes=(l′, m′) -> l′ == l && m′ == m)
          for s in -2:+2 for l in abs(s):2 for m in (-l):l]
@@ -172,6 +162,32 @@ modes = [(name="(s=$s,l=$l,m=$m)", spin=s, el=l, m=m, fun=(θ, ϕ) -> sYlm(s, l,
 
         f′ = ash_evaluate(flm, mode.spin, lmax)
         @test isapprox(f′, f; atol=100eps())
+    end
+end
+
+Random.seed!(100)
+@testset "Parity" begin
+    for iter in 1:100
+        lmax = rand(0:100)
+        sz = ash_grid_size(lmax)
+        nmodes = ash_nmodes(lmax)
+
+        s = rand(-4:4)
+        abs(s) ≤ lmax || continue
+        l = rand(abs(s):lmax)
+        m = rand((-l):l)
+
+        flm = zeros(Complex{Float64}, nmodes)
+        flm[ash_mode_index(s, l, m, lmax)] = 1
+
+        flm′ = zeros(Complex{Float64}, nmodes)
+        flm′[ash_mode_index(-s, l, -m, lmax)] = 1
+
+        f = ash_evaluate(flm, s, lmax)
+        f′ = ash_evaluate(flm′, -s, lmax)
+
+        # Phase: conj(sYlm) = (-1)^(s+m) (-s)Yl(-m)
+        @test conj(f) ≈ bitsign(s + m) * f′
     end
 end
 
@@ -214,8 +230,6 @@ Random.seed!(100)
         @test f + α * g ≈ h
     end
 end
-
-# Phase: conj(Ylm) = (-1)^m Yl(-m)
 
 Random.seed!(100)
 @testset "Orthonormality transforms" begin
@@ -307,3 +321,35 @@ Random.seed!(100)
         @test isapprox(ðð̄f, -l * (l + 1) * f; atol=(lmax + 1)^2 * 100eps())
     end
 end
+
+################################################################################
+
+Random.seed!(100)
+@testset "Arbitrary modes" begin
+    for iter in 1:100
+        lmax = rand(0:100)
+        nmodes = ash_nmodes(lmax)
+
+        flm = zeros(Complex{Float64}, nmodes)
+
+        s = rand(-4:4)
+        abs(s) ≤ lmax || continue
+        l = rand(abs(s):lmax)
+        m = rand((-l):l)
+        flm[ash_mode_index(s, l, m, lmax)] = 1
+
+        f = ash_evaluate(flm, s, lmax)
+
+        f′ = [begin
+                  θ, ϕ = ash_point_coord(ij, lmax)
+                  # We need the increased precision of `BigFloat` for `l >≈ 50`
+                  # AbstractSphericalHarmonics.sYlm(Val(s), Val(l), Val(m), θ, ϕ)
+                  Complex{Float64}(AbstractSphericalHarmonics.sYlm(Val(s), Val(l), Val(m), big(θ), big(ϕ)))
+              end
+              for ij in CartesianIndices(f)]
+
+        @test f ≈ f′
+    end
+end
+
+################################################################################
