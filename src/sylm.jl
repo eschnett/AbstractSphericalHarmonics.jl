@@ -9,13 +9,14 @@ function sYlm0(::Val{s}, ::Val{l}, ::Val{m}, θ::Real, ϕ::Real) where {s,l,m}
 end
 
 export sYlm
-@generated function sYlm(::Val{s}, ::Val{l}, ::Val{m}, θ::Real, ϕ::Real) where {s,l,m}
+@generated function sYlm1(::Val{s}, ::Val{l}, ::Val{m}, θ::Real, ϕ::Real) where {s,l,m}
     stmts = []
     push!(stmts, :((sinθ2, cosθ2) = sincos(θ / 2)))
     T = typeof(one(θ) / one(θ))
     quot = (factorial(big(l + m)) * factorial(big(l - m))) // (factorial(big(l + s)) * factorial(big(l - s)))
     scale = bitsign(m) * sqrt(T(quot * (2l + 1)) / (4 * T(π)))
     push!(stmts, :(res = zero($T)))
+    # TODO: Use Horner scheme. Each summand differs by cos(θ/2)^2 / sin(θ/2)^2 from the next.
     for r in 0:(l - s)
         α = bitsign(l - r - s) * binomial(big(l - s), r) * binomial(big(l + s), r + s - m)
         if α ≠ 0
@@ -29,5 +30,6 @@ export sYlm
         $((stmts)...)
     end
 end
+
 sYlm(s::Int, l::Int, m::Int, θ::Real, ϕ::Real) = sYlm(Val(s), Val(l), Val(m), θ, ϕ)
 sYlm(s::Integer, l::Integer, m::Integer, θ::Real, ϕ::Real) = sYlm(Int(s), Int(l), Int(m), θ, ϕ)
