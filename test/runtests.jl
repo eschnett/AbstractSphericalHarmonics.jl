@@ -1,4 +1,5 @@
 using AbstractSphericalHarmonics
+using LinearAlgebra: norm
 using Random
 using StaticArrays
 using Test
@@ -8,6 +9,7 @@ bitsign(i::Integer) = bitsign(isodd(i))
 
 chop(x) = abs2(x) < 100eps(x) ? zero(x) : x
 chop(x::Complex) = Complex(chop(real(x)), chop(imag(x)))
+chop(x::SArray) = chop.(x)
 
 function integrate(f::AbstractMatrix, g::AbstractMatrix, lmax::Integer)
     sz = ash_grid_size(lmax)
@@ -139,219 +141,219 @@ end
 
 ################################################################################
 
-#TODO Random.seed!(100)
-#TODO modes = [(name="(s=$s,l=$l,m=$m)", spin=s, el=l, m=m, fun=(θ, ϕ) -> sYlm(s, l, m, θ, ϕ), modes=(l′, m′) -> l′ == l && m′ == m)
-#TODO          for s in -2:+2 for l in abs(s):2 for m in (-l):l]
-#TODO @testset "Simple transforms: $(mode.name)" for mode in modes
-#TODO     for lmax in (mode.el):(mode.el) #TODO 20
-#TODO         sz = ash_grid_size(lmax)
-#TODO         f = Array{Complex{Float64}}(undef, sz)
-#TODO         for ij in CartesianIndices(sz)
-#TODO             θ, ϕ = ash_point_coord(ij, lmax)
-#TODO             f[ij] = mode.fun(θ, ϕ)
-#TODO         end
-#TODO         # function setvalue(ij::CartesianIndex{2})
-#TODO         #     θ, ϕ = ash_point_coord(ij, lmax)
-#TODO         #     return Complex{Float64}(mode.fun(θ, ϕ))
-#TODO         # end
-#TODO         # f = map(setvalue, CartesianIndices(sz))
-#TODO 
-#TODO         flm = ash_transform(f, mode.spin, lmax)
-#TODO         @test all(isapprox(flm[ash_mode_index(mode.spin, l, m, lmax)], mode.modes(l, m); atol=100eps()) for l in
-#TODO                                                                                                             abs(mode.spin):lmax
-#TODO                   for m in (-l):l)
-#TODO 
-#TODO         f′ = ash_evaluate(flm, mode.spin, lmax)
-#TODO         @test isapprox(f′, f; atol=100eps())
-#TODO     end
-#TODO end
-#TODO 
-#TODO Random.seed!(100)
-#TODO @testset "Parity" begin
-#TODO     for iter in 1:100
-#TODO         lmax = rand(0:100)
-#TODO         sz = ash_grid_size(lmax)
-#TODO         nmodes = ash_nmodes(lmax)
-#TODO 
-#TODO         s = rand(-4:4)
-#TODO         abs(s) ≤ lmax || continue
-#TODO         l = rand(abs(s):lmax)
-#TODO         m = rand((-l):l)
-#TODO 
-#TODO         flm = zeros(Complex{Float64}, nmodes)
-#TODO         flm[ash_mode_index(s, l, m, lmax)] = 1
-#TODO 
-#TODO         flm′ = zeros(Complex{Float64}, nmodes)
-#TODO         flm′[ash_mode_index(-s, l, -m, lmax)] = 1
-#TODO 
-#TODO         f = ash_evaluate(flm, s, lmax)
-#TODO         f′ = ash_evaluate(flm′, -s, lmax)
-#TODO 
-#TODO         # Phase: conj(sYlm) = (-1)^(s+m) (-s)Yl(-m)
-#TODO         @test conj(f) ≈ bitsign(s + m) * f′
-#TODO     end
-#TODO end
-#TODO 
-#TODO Random.seed!(100)
-#TODO @testset "Linearity" begin
-#TODO     for iter in 1:100
-#TODO         lmax = rand(0:100)
-#TODO         sz = ash_grid_size(lmax)
-#TODO         nmodes = ash_nmodes(lmax)
-#TODO 
-#TODO         spin = rand(-4:4)
-#TODO 
-#TODO         f = randn(Complex{Float64}, sz)
-#TODO         g = randn(Complex{Float64}, sz)
-#TODO         α = randn(Complex{Float64})
-#TODO         h = f + α * g
-#TODO 
-#TODO         flm = ash_transform(f, spin, lmax)
-#TODO         glm = ash_transform(g, spin, lmax)
-#TODO         hlm = ash_transform(h, spin, lmax)
-#TODO 
-#TODO         if !(flm + α * glm ≈ hlm)
-#TODO             @show iter lmax sz nmodes spin
-#TODO             @show α
-#TODO             @show any(isnan, f) any(isnan, g) any(isnan, h)
-#TODO             @show any(isnan, flm) any(isnan, glm) any(isnan, hlm)
-#TODO             @show f[1] g[1] h[1]
-#TODO             @show flm[1] glm[1] hlm[1]
-#TODO         end
-#TODO         @test flm + α * glm ≈ hlm
-#TODO 
-#TODO         flm = randn(Complex{Float64}, nmodes)
-#TODO         glm = randn(Complex{Float64}, nmodes)
-#TODO         hlm = flm + α * glm
-#TODO 
-#TODO         f = ash_evaluate(flm, spin, lmax)
-#TODO         g = ash_evaluate(glm, spin, lmax)
-#TODO         h = ash_evaluate(hlm, spin, lmax)
-#TODO 
-#TODO         @test f + α * g ≈ h
-#TODO     end
-#TODO end
-#TODO 
-#TODO Random.seed!(100)
-#TODO @testset "Orthonormality transforms" begin
-#TODO     for iter in 1:100
-#TODO         lmax = rand(0:100)
-#TODO         nmodes = ash_nmodes(lmax)
-#TODO 
-#TODO         smax = min(4, lmax)
-#TODO         spin = rand((-smax):smax)
-#TODO 
-#TODO         flm = zeros(Complex{Float64}, nmodes)
-#TODO         glm = zeros(Complex{Float64}, nmodes)
-#TODO 
-#TODO         lf = rand(abs(spin):lmax)
-#TODO         mf = rand((-lf):lf)
-#TODO         lg = rand(abs(spin):lmax)
-#TODO         mg = rand((-lg):lg)
-#TODO 
-#TODO         flm[ash_mode_index(spin, lf, mf, lmax)] = 1
-#TODO         glm[ash_mode_index(spin, lg, mg, lmax)] = 1
-#TODO 
-#TODO         f = ash_evaluate(flm, spin, lmax)
-#TODO         g = ash_evaluate(glm, spin, lmax)
-#TODO 
-#TODO         @test isapprox(integrate(f, f, lmax), 1; atol=1 / lmax^2)
-#TODO         @test isapprox(integrate(f, g, lmax), (lf == lg) * (mf == mg); atol=1 / lmax^2)
-#TODO 
-#TODO         h = conj(f) .* f
-#TODO         hlm = ash_transform(h, 0, lmax)
-#TODO         @test isapprox(hlm[ash_mode_index(0, 0, 0, lmax)], sqrt(1 / 4π); atol=sqrt(eps()))
-#TODO 
-#TODO         h = conj(f) .* g
-#TODO         hlm = ash_transform(h, 0, lmax)
-#TODO         @test isapprox(hlm[ash_mode_index(0, 0, 0, lmax)], (lf == lg) * (mf == mg) * sqrt(1 / 4π); atol=sqrt(eps()))
-#TODO     end
-#TODO end
-#TODO 
-#TODO Random.seed!(100)
-#TODO modes = [(name="(s=$s,l=$l,m=$m)", spin=s, el=l, fun=(θ, ϕ) -> sYlm(s, l, m, θ, ϕ), ðfun=(θ, ϕ) -> ðsYlm(s, l, m, θ, ϕ),
-#TODO           ð̄fun=(θ, ϕ) -> ð̄sYlm(s, l, m, θ, ϕ)) for s in 0:+2 for l in abs(s):2 for m in (-l):l]
-#TODO @testset "Simple derivatives (eth, eth-bar): $(mode.name)" for mode in modes
-#TODO     for lmax in (mode.el):20
-#TODO         sz = ash_grid_size(lmax)
-#TODO         f = Array{Complex{Float64}}(undef, sz)
-#TODO         ðf₀ = Array{Complex{Float64}}(undef, sz)
-#TODO         ð̄f₀ = Array{Complex{Float64}}(undef, sz)
-#TODO         for ij in CartesianIndices(sz)
-#TODO             θ, ϕ = ash_point_coord(ij, lmax)
-#TODO             f[ij] = mode.fun(θ, ϕ)
-#TODO             ðf₀[ij] = mode.ðfun(θ, ϕ)
-#TODO             ð̄f₀[ij] = mode.ð̄fun(θ, ϕ)
-#TODO         end
-#TODO 
-#TODO         flm = ash_transform(f, mode.spin, lmax)
-#TODO 
-#TODO         ðflm = ash_eth(flm, mode.spin, lmax)
-#TODO         ðf = ash_evaluate(ðflm, mode.spin + 1, lmax)
-#TODO         @test isapprox(ðf, ðf₀; atol=10000eps())
-#TODO 
-#TODO         ð̄flm = ash_ethbar(flm, mode.spin, lmax)
-#TODO         ð̄f = ash_evaluate(ð̄flm, mode.spin - 1, lmax)
-#TODO         @test isapprox(ð̄f, ð̄f₀; atol=10000eps())
-#TODO     end
-#TODO end
-#TODO 
-#TODO Random.seed!(100)
-#TODO @testset "Eigenvectors of Laplacian" begin
-#TODO     for iter in 1:100
-#TODO         lmax = rand(0:100)
-#TODO         nmodes = ash_nmodes(lmax)
-#TODO 
-#TODO         flm = zeros(Complex{Float64}, nmodes)
-#TODO 
-#TODO         l = rand(0:lmax)
-#TODO         m = rand((-l):l)
-#TODO         flm[ash_mode_index(0, l, m, lmax)] = 1
-#TODO 
-#TODO         ðflm = ash_eth(flm, 0, lmax)
-#TODO         ð̄ðflm = ash_ethbar(ðflm, +1, lmax)
-#TODO 
-#TODO         ð̄flm = ash_ethbar(flm, 0, lmax)
-#TODO         ðð̄flm = ash_eth(ð̄flm, -1, lmax)
-#TODO 
-#TODO         f = ash_evaluate(flm, 0, lmax)
-#TODO         ð̄ðf = ash_evaluate(ð̄ðflm, 0, lmax)
-#TODO         ðð̄f = ash_evaluate(ðð̄flm, 0, lmax)
-#TODO 
-#TODO         @test isapprox(ð̄ðf, -l * (l + 1) * f; atol=(lmax + 1)^2 * 100eps())
-#TODO         @test isapprox(ðð̄f, -l * (l + 1) * f; atol=(lmax + 1)^2 * 100eps())
-#TODO     end
-#TODO end
-#TODO 
-#TODO ################################################################################
-#TODO 
-#TODO Random.seed!(100)
-#TODO @testset "Arbitrary modes" begin
-#TODO     for iter in 1:100
-#TODO         lmax = rand(0:100)
-#TODO         nmodes = ash_nmodes(lmax)
-#TODO 
-#TODO         flm = zeros(Complex{Float64}, nmodes)
-#TODO 
-#TODO         s = rand(-4:4)
-#TODO         abs(s) ≤ lmax || continue
-#TODO         l = rand(abs(s):lmax)
-#TODO         m = rand((-l):l)
-#TODO         flm[ash_mode_index(s, l, m, lmax)] = 1
-#TODO 
-#TODO         f = ash_evaluate(flm, s, lmax)
-#TODO 
-#TODO         f′ = [begin
-#TODO                   θ, ϕ = ash_point_coord(ij, lmax)
-#TODO                   # We need the increased precision of `BigFloat` for `l >≈ 50`
-#TODO                   # AbstractSphericalHarmonics.sYlm(Val(s), Val(l), Val(m), θ, ϕ)
-#TODO                   Complex{Float64}(AbstractSphericalHarmonics.sYlm(Val(s), Val(l), Val(m), big(θ), big(ϕ)))
-#TODO               end
-#TODO               for ij in CartesianIndices(f)]
-#TODO 
-#TODO         @test f ≈ f′
-#TODO     end
-#TODO end
+Random.seed!(100)
+modes = [(name="(s=$s,l=$l,m=$m)", spin=s, el=l, m=m, fun=(θ, ϕ) -> sYlm(s, l, m, θ, ϕ), modes=(l′, m′) -> l′ == l && m′ == m)
+         for s in -2:+2 for l in abs(s):2 for m in (-l):l]
+@testset "Simple transforms: $(mode.name)" for mode in modes
+    for lmax in (mode.el):(mode.el) #TODO 20
+        sz = ash_grid_size(lmax)
+        f = Array{Complex{Float64}}(undef, sz)
+        for ij in CartesianIndices(sz)
+            θ, ϕ = ash_point_coord(ij, lmax)
+            f[ij] = mode.fun(θ, ϕ)
+        end
+        # function setvalue(ij::CartesianIndex{2})
+        #     θ, ϕ = ash_point_coord(ij, lmax)
+        #     return Complex{Float64}(mode.fun(θ, ϕ))
+        # end
+        # f = map(setvalue, CartesianIndices(sz))
+
+        flm = ash_transform(f, mode.spin, lmax)
+        @test all(isapprox(flm[ash_mode_index(mode.spin, l, m, lmax)], mode.modes(l, m); atol=100eps()) for l in
+                                                                                                            abs(mode.spin):lmax
+                  for m in (-l):l)
+
+        f′ = ash_evaluate(flm, mode.spin, lmax)
+        @test isapprox(f′, f; atol=100eps())
+    end
+end
+
+Random.seed!(100)
+@testset "Parity" begin
+    for iter in 1:100
+        lmax = rand(0:100)
+        sz = ash_grid_size(lmax)
+        nmodes = ash_nmodes(lmax)
+
+        s = rand(-4:4)
+        abs(s) ≤ lmax || continue
+        l = rand(abs(s):lmax)
+        m = rand((-l):l)
+
+        flm = zeros(Complex{Float64}, nmodes)
+        flm[ash_mode_index(s, l, m, lmax)] = 1
+
+        flm′ = zeros(Complex{Float64}, nmodes)
+        flm′[ash_mode_index(-s, l, -m, lmax)] = 1
+
+        f = ash_evaluate(flm, s, lmax)
+        f′ = ash_evaluate(flm′, -s, lmax)
+
+        # Phase: conj(sYlm) = (-1)^(s+m) (-s)Yl(-m)
+        @test conj(f) ≈ bitsign(s + m) * f′
+    end
+end
+
+Random.seed!(100)
+@testset "Linearity" begin
+    for iter in 1:100
+        lmax = rand(0:100)
+        sz = ash_grid_size(lmax)
+        nmodes = ash_nmodes(lmax)
+
+        spin = rand(-4:4)
+
+        f = randn(Complex{Float64}, sz)
+        g = randn(Complex{Float64}, sz)
+        α = randn(Complex{Float64})
+        h = f + α * g
+
+        flm = ash_transform(f, spin, lmax)
+        glm = ash_transform(g, spin, lmax)
+        hlm = ash_transform(h, spin, lmax)
+
+        if !(flm + α * glm ≈ hlm)
+            @show iter lmax sz nmodes spin
+            @show α
+            @show any(isnan, f) any(isnan, g) any(isnan, h)
+            @show any(isnan, flm) any(isnan, glm) any(isnan, hlm)
+            @show f[1] g[1] h[1]
+            @show flm[1] glm[1] hlm[1]
+        end
+        @test flm + α * glm ≈ hlm
+
+        flm = randn(Complex{Float64}, nmodes)
+        glm = randn(Complex{Float64}, nmodes)
+        hlm = flm + α * glm
+
+        f = ash_evaluate(flm, spin, lmax)
+        g = ash_evaluate(glm, spin, lmax)
+        h = ash_evaluate(hlm, spin, lmax)
+
+        @test f + α * g ≈ h
+    end
+end
+
+Random.seed!(100)
+@testset "Orthonormality transforms" begin
+    for iter in 1:100
+        lmax = rand(0:100)
+        nmodes = ash_nmodes(lmax)
+
+        smax = min(4, lmax)
+        spin = rand((-smax):smax)
+
+        flm = zeros(Complex{Float64}, nmodes)
+        glm = zeros(Complex{Float64}, nmodes)
+
+        lf = rand(abs(spin):lmax)
+        mf = rand((-lf):lf)
+        lg = rand(abs(spin):lmax)
+        mg = rand((-lg):lg)
+
+        flm[ash_mode_index(spin, lf, mf, lmax)] = 1
+        glm[ash_mode_index(spin, lg, mg, lmax)] = 1
+
+        f = ash_evaluate(flm, spin, lmax)
+        g = ash_evaluate(glm, spin, lmax)
+
+        @test isapprox(integrate(f, f, lmax), 1; atol=1 / lmax^2)
+        @test isapprox(integrate(f, g, lmax), (lf == lg) * (mf == mg); atol=1 / lmax^2)
+
+        h = conj(f) .* f
+        hlm = ash_transform(h, 0, lmax)
+        @test isapprox(hlm[ash_mode_index(0, 0, 0, lmax)], sqrt(1 / 4π); atol=sqrt(eps()))
+
+        h = conj(f) .* g
+        hlm = ash_transform(h, 0, lmax)
+        @test isapprox(hlm[ash_mode_index(0, 0, 0, lmax)], (lf == lg) * (mf == mg) * sqrt(1 / 4π); atol=sqrt(eps()))
+    end
+end
+
+Random.seed!(100)
+modes = [(name="(s=$s,l=$l,m=$m)", spin=s, el=l, fun=(θ, ϕ) -> sYlm(s, l, m, θ, ϕ), ðfun=(θ, ϕ) -> ðsYlm(s, l, m, θ, ϕ),
+          ð̄fun=(θ, ϕ) -> ð̄sYlm(s, l, m, θ, ϕ)) for s in 0:+2 for l in abs(s):2 for m in (-l):l]
+@testset "Simple derivatives (eth, eth-bar): $(mode.name)" for mode in modes
+    for lmax in (mode.el):20
+        sz = ash_grid_size(lmax)
+        f = Array{Complex{Float64}}(undef, sz)
+        ðf₀ = Array{Complex{Float64}}(undef, sz)
+        ð̄f₀ = Array{Complex{Float64}}(undef, sz)
+        for ij in CartesianIndices(sz)
+            θ, ϕ = ash_point_coord(ij, lmax)
+            f[ij] = mode.fun(θ, ϕ)
+            ðf₀[ij] = mode.ðfun(θ, ϕ)
+            ð̄f₀[ij] = mode.ð̄fun(θ, ϕ)
+        end
+
+        flm = ash_transform(f, mode.spin, lmax)
+
+        ðflm = ash_eth(flm, mode.spin, lmax)
+        ðf = ash_evaluate(ðflm, mode.spin + 1, lmax)
+        @test isapprox(ðf, ðf₀; atol=10000eps())
+
+        ð̄flm = ash_ethbar(flm, mode.spin, lmax)
+        ð̄f = ash_evaluate(ð̄flm, mode.spin - 1, lmax)
+        @test isapprox(ð̄f, ð̄f₀; atol=10000eps())
+    end
+end
+
+Random.seed!(100)
+@testset "Eigenvectors of Laplacian" begin
+    for iter in 1:100
+        lmax = rand(0:100)
+        nmodes = ash_nmodes(lmax)
+
+        flm = zeros(Complex{Float64}, nmodes)
+
+        l = rand(0:lmax)
+        m = rand((-l):l)
+        flm[ash_mode_index(0, l, m, lmax)] = 1
+
+        ðflm = ash_eth(flm, 0, lmax)
+        ð̄ðflm = ash_ethbar(ðflm, +1, lmax)
+
+        ð̄flm = ash_ethbar(flm, 0, lmax)
+        ðð̄flm = ash_eth(ð̄flm, -1, lmax)
+
+        f = ash_evaluate(flm, 0, lmax)
+        ð̄ðf = ash_evaluate(ð̄ðflm, 0, lmax)
+        ðð̄f = ash_evaluate(ðð̄flm, 0, lmax)
+
+        @test isapprox(ð̄ðf, -l * (l + 1) * f; atol=(lmax + 1)^2 * 100eps())
+        @test isapprox(ðð̄f, -l * (l + 1) * f; atol=(lmax + 1)^2 * 100eps())
+    end
+end
+
+################################################################################
+
+Random.seed!(100)
+@testset "Arbitrary modes" begin
+    for iter in 1:100
+        lmax = rand(0:100)
+        nmodes = ash_nmodes(lmax)
+
+        flm = zeros(Complex{Float64}, nmodes)
+
+        s = rand(-4:4)
+        abs(s) ≤ lmax || continue
+        l = rand(abs(s):lmax)
+        m = rand((-l):l)
+        flm[ash_mode_index(s, l, m, lmax)] = 1
+
+        f = ash_evaluate(flm, s, lmax)
+
+        f′ = [begin
+                  θ, ϕ = ash_point_coord(ij, lmax)
+                  # We need the increased precision of `BigFloat` for `l >≈ 50`
+                  # AbstractSphericalHarmonics.sYlm(Val(s), Val(l), Val(m), θ, ϕ)
+                  Complex{Float64}(AbstractSphericalHarmonics.sYlm(Val(s), Val(l), Val(m), big(θ), big(ϕ)))
+              end
+              for ij in CartesianIndices(f)]
+
+        @test f ≈ f′
+    end
+end
 
 ################################################################################
 
@@ -370,46 +372,78 @@ function const_tensor(::Val{D}, ::Type{T}, lmax::Int) where {D,T}
     return f
 end
 
-#TODO Random.seed!(100)
-#TODO @testset "Tensors on the sphere (rank $D)" for D in 0:2
-#TODO     for iter in 1:100
-#TODO         lmax = rand(0:100)
-#TODO 
-#TODO         f = rand_tensor(Val(D), Complex{Float64}, lmax)
-#TODO 
-#TODO         t = Tensor{D}(f, lmax)
-#TODO         st = SpinTensor{D}(t)
-#TODO         t′ = Tensor{D}(st)
-#TODO         st′ = SpinTensor{D}(t′)
-#TODO         t″ = Tensor{D}(st′)
-#TODO 
-#TODO         @test st′ ≈ st
-#TODO         @test t″ ≈ t′
-#TODO     end
-#TODO end
-#TODO 
-#TODO Random.seed!(100)
-#TODO @testset "Linearity of tensors on the sphere (rank $D)" for D in 0:2
-#TODO     for iter in 1:100
-#TODO         lmax = rand(0:100)
-#TODO 
-#TODO         f = rand_tensor(Val(D), Complex{Float64}, lmax)
-#TODO         g = rand_tensor(Val(D), Complex{Float64}, lmax)
-#TODO         α = randn(Complex{Float64})
-#TODO 
-#TODO         h = f + α * g
-#TODO 
-#TODO         t = Tensor{D}(f, lmax)
-#TODO         u = Tensor{D}(g, lmax)
-#TODO         v = Tensor{D}(h, lmax)
-#TODO 
-#TODO         st = SpinTensor{D}(t)
-#TODO         su = SpinTensor{D}(u)
-#TODO         sv = SpinTensor{D}(v)
-#TODO 
-#TODO         @test sv ≈ st + α * su
-#TODO     end
-#TODO end
+Random.seed!(100)
+@testset "Tensors on the sphere (rank $D)" for D in 0:2
+    for iter in 1:100
+        lmax = rand(0:100)
+
+        f = rand_tensor(Val(D), Complex{Float64}, lmax)
+
+        t = Tensor{D}(f, lmax)
+        st = SpinTensor{D}(t)
+        t′ = Tensor{D}(st)
+        st′ = SpinTensor{D}(t′)
+        t″ = Tensor{D}(st′)
+
+        @test st′ ≈ st
+        @test t″ ≈ t′
+    end
+end
+
+Random.seed!(100)
+@testset "Linearity of tensors on the sphere (rank $D)" for D in 0:2
+    for iter in 1:100
+        lmax = rand(0:100)
+
+        f = rand_tensor(Val(D), Complex{Float64}, lmax)
+        g = rand_tensor(Val(D), Complex{Float64}, lmax)
+        α = randn(Complex{Float64})
+
+        h = f + α * g
+
+        t = Tensor{D}(f, lmax)
+        u = Tensor{D}(g, lmax)
+        v = Tensor{D}(h, lmax)
+
+        st = SpinTensor{D}(t)
+        su = SpinTensor{D}(u)
+        sv = SpinTensor{D}(v)
+
+        @test sv ≈ st + α * su
+    end
+end
+
+@testset "Simple derivatives of tensors on the sphere" begin
+    for lmax in 1:100
+        sz = ash_grid_size(lmax)
+
+        s = Tensor{0}(fill(Scalar{Complex{Float64}}(1), sz), lmax)
+        ds₀ = Tensor{1}(fill(SVector{2,Complex{Float64}}(0, 0), sz), lmax)
+
+        s̃ = SpinTensor(s)
+        ds̃ = tensor_gradient(s̃)
+        ds = Tensor(ds̃)
+
+        @test isapprox(ds, ds₀; atol=(lmax + 1)^2 * 1000eps())
+
+        x = Tensor{0}([begin
+                           θ, ϕ = ash_point_coord(ij, lmax)
+                           Scalar{Complex{Float64}}(sin(θ) * cos(ϕ))
+                       end
+                       for ij in CartesianIndices(sz)], lmax)
+        dx₀ = Tensor{1}([begin
+                             θ, ϕ = ash_point_coord(ij, lmax)
+                             SVector{2,Complex{Float64}}(cos(θ) * cos(ϕ), -sin(ϕ))
+                         end
+                         for ij in CartesianIndices(sz)], lmax)
+
+        x̃ = SpinTensor(x)
+        dx̃ = tensor_gradient(x̃)
+        dx = Tensor(dx̃)
+
+        @test isapprox(dx, dx₀; atol=(lmax + 1)^2 * 100eps())
+    end
+end
 
 Random.seed!(100)
 @testset "Derivatives of tensors on the sphere (rank $D)" for D in 0:1
@@ -470,5 +504,15 @@ Random.seed!(100)
             # end
             @test_skip isapprox(dtp, dtp′; atol=1 / lmax^2)
         end
+    end
+end
+
+Random.seed!(100)
+@testset "Calculate Ricci scalar" begin
+    for lmax in 0:100
+        sz = ash_grid_size(lmax)
+
+        q = Tensor{2}(fill(SMatrix{2,2,Complex{Float64}}(1, 0, 0, 1), sz), lmax)
+        # dq = tensor_gradient(q)
     end
 end

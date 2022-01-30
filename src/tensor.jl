@@ -73,6 +73,7 @@ Base.:(==)(t1::Tensor{D}, t2::Tensor{D}) where {D} = t1.lmax == t2.lmax && t1.va
 function Base.isapprox(t1::Tensor{D}, t2::Tensor{D}; kws...) where {D}
     return t1.lmax == t2.lmax && isapprox(t1.values, t2.values; kws...)
 end
+LinearAlgebra.norm(t::Tensor; kws...) where {D} = norm(t.values; kws...)
 Base.zero(t::Tensor{D}) where {D} = Tensor{D}(zero(t.values), t.lmax)
 Base.:-(t::Tensor{D}) where {D} = Tensor{D}(-t.values, t.lmax)
 Base.conj(t::Tensor{D}) where {D} = Tensor{D}(conj(t.values), t.lmax)
@@ -95,6 +96,7 @@ end
 function Base.isapprox(t1::SpinTensor{D}, t2::SpinTensor{D}; kws...) where {D}
     return t1.lmax == t2.lmax && isapprox(t1.coeffs, t2.coeffs; kws...)
 end
+LinearAlgebra.norm(t::SpinTensor; kws...) where {D} = norm(t.coeffs; kws...)
 Base.zero(t::SpinTensor{D}) where {D} = SpinTensor{D}(zero(t.coeffs), t.lmax)
 Base.:-(t::SpinTensor{D}) where {D} = SpinTensor{D}(-t.coefffs, t.lmax)
 Base.conj(t::SpinTensor{D}) where {D} = SpinTensor{D}(conj(t.coeffs), t.lmax)
@@ -194,17 +196,17 @@ function tensor_gradient(spintensor::SpinTensor{D}) where {D}
     lmax = spintensor.lmax
     if D == 0
         coeffs = spintensor.coeffs[]
-        dcoeffs_m = ash_eth(coeffs, 0, lmax)
-        dcoeffs_m̄ = ash_ethbar(coeffs, 0, lmax)
+        dcoeffs_m = -ash_eth(coeffs, 0, lmax)
+        dcoeffs_m̄ = -ash_ethbar(coeffs, 0, lmax)
         return SpinTensor{D + 1}(stensor(D + 1)(dcoeffs_m, dcoeffs_m̄), lmax)::SpinTensor{D + 1,T}
     end
     if D == 1
         coeffs_m = spintensor.coeffs[1]
         coeffs_m̄ = spintensor.coeffs[2]
-        dcoeffs_mm = ash_eth(coeffs_m, 1, lmax)
-        dcoeffs_mm̄ = ash_ethbar(coeffs_m, 1, lmax)
-        dcoeffs_m̄m = ash_eth(coeffs_m̄, -1, lmax)
-        dcoeffs_m̄m̄ = ash_ethbar(coeffs_m̄, -1, lmax)
+        dcoeffs_mm = -ash_eth(coeffs_m, 1, lmax)
+        dcoeffs_mm̄ = -ash_ethbar(coeffs_m, 1, lmax)
+        dcoeffs_m̄m = -ash_eth(coeffs_m̄, -1, lmax)
+        dcoeffs_m̄m̄ = -ash_ethbar(coeffs_m̄, -1, lmax)
         return SpinTensor{D + 1}(stensor(D + 1)(dcoeffs_mm, dcoeffs_m̄m, dcoeffs_mm̄, dcoeffs_m̄m̄), lmax)::SpinTensor{D + 1,T}
     end
     @assert false
