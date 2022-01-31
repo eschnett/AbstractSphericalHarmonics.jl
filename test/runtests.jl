@@ -170,7 +170,7 @@ end
 
 Random.seed!(100)
 @testset "Parity" begin
-    for iter in 1:100
+    for iter in 1:20
         lmax = rand(0:100)
         sz = ash_grid_size(lmax)
         nmodes = ash_nmodes(lmax)
@@ -196,7 +196,7 @@ end
 
 Random.seed!(100)
 @testset "Linearity" begin
-    for iter in 1:100
+    for iter in 1:20
         lmax = rand(0:100)
         sz = ash_grid_size(lmax)
         nmodes = ash_nmodes(lmax)
@@ -236,7 +236,7 @@ end
 
 Random.seed!(100)
 @testset "Orthonormality transforms" begin
-    for iter in 1:100
+    for iter in 1:20
         lmax = rand(0:100)
         nmodes = ash_nmodes(lmax)
 
@@ -300,7 +300,7 @@ end
 
 Random.seed!(100)
 @testset "Eigenvectors of Laplacian" begin
-    for iter in 1:100
+    for iter in 1:20
         lmax = rand(0:100)
         nmodes = ash_nmodes(lmax)
 
@@ -329,7 +329,7 @@ end
 
 Random.seed!(100)
 @testset "Arbitrary modes" begin
-    for iter in 1:100
+    for iter in 1:20
         lmax = rand(0:100)
         nmodes = ash_nmodes(lmax)
 
@@ -373,8 +373,8 @@ function const_tensor(::Val{D}, ::Type{T}, lmax::Int) where {D,T}
 end
 
 Random.seed!(100)
-@testset "Tensors on the sphere (rank $D)" for D in 0:2
-    for iter in 1:100
+@testset "Tensors on the sphere (rank $D)" for D in 0:4
+    for iter in 1:20
         lmax = rand(0:100)
 
         f = rand_tensor(Val(D), Complex{Float64}, lmax)
@@ -391,8 +391,8 @@ Random.seed!(100)
 end
 
 Random.seed!(100)
-@testset "Linearity of tensors on the sphere (rank $D)" for D in 0:2
-    for iter in 1:100
+@testset "Linearity of tensors on the sphere (rank $D)" for D in 0:4
+    for iter in 1:20
         lmax = rand(0:100)
 
         f = rand_tensor(Val(D), Complex{Float64}, lmax)
@@ -414,7 +414,7 @@ Random.seed!(100)
 end
 
 @testset "Simple derivatives of tensors on the sphere" begin
-    for lmax in 1:100
+    for lmax in 1:20
         sz = ash_grid_size(lmax)
 
         s = Tensor{0}(fill(Scalar{Complex{Float64}}(1), sz), lmax)
@@ -446,8 +446,8 @@ end
 end
 
 Random.seed!(100)
-@testset "Derivatives of tensors on the sphere (rank $D)" for D in 0:1
-    for iter in 1:100
+@testset "Derivatives of tensors on the sphere (rank $D)" for D in 0:3
+    for iter in 1:20
         lmax = rand(0:100)
 
         f = rand_tensor(Val(D), Complex{Float64}, lmax)
@@ -509,10 +509,44 @@ end
 
 Random.seed!(100)
 @testset "Calculate Ricci scalar" begin
-    for lmax in 0:100
+    for iter in 1:20
+        lmax = rand(2:100)
         sz = ash_grid_size(lmax)
 
+        # q_ab = (1, 0, 0, 1)
         q = Tensor{2}(fill(SMatrix{2,2,Complex{Float64}}(1, 0, 0, 1), sz), lmax)
-        # dq = tensor_gradient(q)
+        q̃ = SpinTensor(q)
+        # qu^ab
+        qu = q
+        # q_ab,c
+        dq̃ = tensor_gradient(q̃)
+        dq = Tensor(dq̃)
+        # Γ^a_bc = q^ad (q_dc,b + q_bd,c - q_bc,d) / 2
+        Γ = Tensor{3}([SArray{Tuple{2,2,2}}(sum(qu[a, d] * (dq[d, c, b] + dq[b, d, c] - dq[b, c, d]) / 2 for d in 1:2)
+                                            for a in 1:2, b in 1:2, c in 1:2) for (qu, dq) in zip(qu.values, dq.values)], lmax)
+        # dΓ^a_bc,d
+        Γ̃ = SpinTensor(Γ)
+        dΓ̃ = tensor_gradient(Γ̃)
+        dΓ = Tensor(dΓ̃)
+        # R_ab = dΓ^c_ab,c - dΓ^c_ac,b + Γ^c_ab Γ^d_cd - Γ^c_ad Γ^d_bc
+        R = Tensor{2}([SMatrix{2,2}(sum(dΓ[c, a, b, c] - dΓ[c, a, c, b] for c in 1:2) +
+                                    sum(Γ[c, a, b] * Γ[d, c, d] - Γ[c, a, d] * Γ[d, b, c] for c in 1:2, d in 1:2)
+                                    for a in 1:2, b in 1:2) for (Γ, dΓ) in zip(Γ.values, dΓ.values)], lmax)
+        Rsc = Tensor{0}([Scalar(sum(qu[a, b] * R[a, b] for a in 1:2, b in 1:2)) for (qu, R) in zip(qu.values, R.values)], lmax)
+
+        @test isapprox(map(x -> x[], Rsc.values), zeros(sz); atol=(lmax + 1)^4 * 10eps())
+
+        # println("q:")
+        # display(map(x -> chop.(x), q.values))
+        # println()
+        # println("Γ:")
+        # display(map(x -> chop.(x), Γ.values))
+        # println()
+        # println("R:")
+        # display(map(x -> chop.(x), R.values))
+        # println()
+        # println("Rsc:")
+        # display(map(x -> chop.(x)[], Rsc.values))
+        # println()
     end
 end

@@ -7,7 +7,7 @@ using StaticArrays
 ################################################################################
 
 # using FastSphericalHarmonics
-using ssht
+using SSHT
 
 export ash_grid_size, ash_nmodes
 export ash_ntheta, ash_nphi, ash_thetas, ash_phis, ash_point_coord, ash_point_delta, ash_grid_as_phi_theta

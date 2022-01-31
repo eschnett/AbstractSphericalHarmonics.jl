@@ -9,7 +9,7 @@ function sYlm0(::Val{s}, ::Val{l}, ::Val{m}, θ::Real, ϕ::Real) where {s,l,m}
 end
 
 export sYlm
-@generated function sYlm1(::Val{s}, ::Val{l}, ::Val{m}, θ::Real, ϕ::Real) where {s,l,m}
+@generated function sYlm(::Val{s}, ::Val{l}, ::Val{m}, θ::Real, ϕ::Real) where {s,l,m}
     stmts = []
     push!(stmts, :((sinθ2, cosθ2) = sincos(θ / 2)))
     T = typeof(one(θ) / one(θ))
