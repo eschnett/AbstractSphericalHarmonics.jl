@@ -14,3 +14,7 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [compat]
 julia = "1.6"
+ComputedFieldTypes = "1.0.0"
+FastSphericalHarmonics = "1.2.3"
+StaticArrays = "1.3.4"
+SSHT = "0.1.0"
