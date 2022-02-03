@@ -163,7 +163,7 @@ modes = [(name="(s=$s,l=$l,m=$m)", spin=s, el=l, m=m, fun=(θ, ϕ) -> sYlm(s, l,
                   for m in (-l):l)
 
         f′ = ash_evaluate(flm, mode.spin, lmax)
-        @test isapprox(f′, f; atol=100eps())
+        @test isapprox(f′, f; atol=1000eps())
     end
 end
 
