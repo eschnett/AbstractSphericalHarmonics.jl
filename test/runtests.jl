@@ -4,8 +4,7 @@ using Random
 using StaticArrays
 using Test
 
-bitsign(b::Bool) = b ? -1 : 1
-bitsign(i::Integer) = bitsign(isodd(i))
+const bitsign = AbstractSphericalHarmonics.bitsign
 
 chop(x) = abs2(x) < 100eps(x) ? zero(x) : x
 chop(x::Complex) = Complex(chop(real(x)), chop(imag(x)))
@@ -145,7 +144,7 @@ Random.seed!(100)
 modes = [(name="(s=$s,l=$l,m=$m)", spin=s, el=l, m=m, fun=(θ, ϕ) -> sYlm(s, l, m, θ, ϕ), modes=(l′, m′) -> l′ == l && m′ == m)
          for s in -2:+2 for l in abs(s):2 for m in (-l):l]
 @testset "Simple transforms: $(mode.name)" for mode in modes
-    for lmax in (mode.el):(mode.el) #TODO 20
+    for lmax in (mode.el):20
         sz = ash_grid_size(lmax)
         f = Array{Complex{Float64}}(undef, sz)
         for ij in CartesianIndices(sz)
@@ -235,20 +234,21 @@ Random.seed!(100)
 end
 
 Random.seed!(100)
-@testset "Orthonormality transforms" begin
+@testset "Orthonormality" begin
     for iter in 1:20
         lmax = rand(0:100)
         nmodes = ash_nmodes(lmax)
 
-        smax = min(4, lmax)
+        smax = min(4, lmax ÷ 2)
         spin = rand((-smax):smax)
 
         flm = zeros(Complex{Float64}, nmodes)
         glm = zeros(Complex{Float64}, nmodes)
 
-        lf = rand(abs(spin):lmax)
+        # The produce will have lh = lf + lg
+        lf = rand(abs(spin):(lmax ÷ 2))
         mf = rand((-lf):lf)
-        lg = rand(abs(spin):lmax)
+        lg = rand(abs(spin):(lmax - lf))
         mg = rand((-lg):lg)
 
         flm[ash_mode_index(spin, lf, mf, lmax)] = 1
@@ -257,7 +257,7 @@ Random.seed!(100)
         f = ash_evaluate(flm, spin, lmax)
         g = ash_evaluate(glm, spin, lmax)
 
-        @test isapprox(integrate(f, f, lmax), 1; atol=1 / lmax^2)
+        @test isapprox(integrate(f, f, lmax), 1; atol=20 / lmax^2)
         @test isapprox(integrate(f, g, lmax), (lf == lg) * (mf == mg); atol=1 / lmax^2)
 
         h = conj(f) .* f
