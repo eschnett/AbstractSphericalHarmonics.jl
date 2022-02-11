@@ -52,6 +52,8 @@ weights.
 Grouping tensor components by their spin weight allows representing
 tensors via spin-weighted spherical harmonics, and allows calculating
 covariant derivatives (covariant with respect to the unit sphere).
+
+Note that we use a convention where `m^a m̄_a = 2`.
 """ SpinTensor
 
 # Convenience constructors
@@ -112,6 +114,31 @@ Base.:*(a::Number, t::SpinTensor{D}) where {D} = SpinTensor{D}(a * t.coeffs, t.l
 Base.:*(t::SpinTensor{D}, a::Number) where {D} = SpinTensor{D}(t.coeffs * a, t.lmax)
 Base.:/(t::SpinTensor{D}, a::Number) where {D} = SpinTensor{D}(t.coeffs / a, t.lmax)
 
+export filter_modes
+function filter_modes(spintensor::SpinTensor{D}) where {D}
+    T = eltype(spintensor)
+    @assert T <: Complex
+    coeffs = spintensor.coeffs
+    lmax = spintensor.lmax
+    twos = ntuple(d -> 2, D)
+    weights = SVector{2}(+1, -1)
+    lfilter = lmax * 2 ÷ 3
+    coeffs′ = SArray{Tuple{twos...}}([
+        begin
+            cs = coeffs[ij]
+            @assert size(cs) == ash_nmodes(lmax)
+            s = sum(SVector{D,Int}(weights[i] for i in Tuple(ij)))
+            [
+                begin
+                    l, m = ash_mode_numbers(s, ind, lmax)
+                    abs(s) ≤ l ≤ lfilter && abs(m) ≤ l ? c : zero(c)
+                end for (ind, c) in zip(CartesianIndices(cs), cs)
+            ]
+        end for ij in CartesianIndices(twos)
+    ])
+    return SpinTensor{D}(coeffs′, lmax)::SpinTensor{D,T}
+end
+
 "Convert `Tensor` to `SpinTensor`"
 function SpinTensor{D}(tensor::Tensor{D,T}) where {D,T<:Complex}
     lmax = tensor.lmax
@@ -125,14 +152,17 @@ function SpinTensor{D}(tensor::Tensor{D,T}) where {D,T<:Complex}
     mm̄::SVector{2,SVector{2,Complex{Int}}}
     weights = SVector{2}(+1, -1)
     twos = ntuple(d -> 2, D)
-    coeffss = [begin
-                   values = [sum(prod(SVector{D,Complex{Int}}(mm̄[ij[d]][ab[d]] for d in 1:D)) * v[ab]
-                                 for ab in CartesianIndices(twos)) for v in tensor.values]
-                   s = sum(SVector{D,Int}(weights[i] for i in Tuple(ij)))
-                   coeffs = ash_transform(values, s, lmax)
-                   coeffs
-               end
-               for ij in CartesianIndices(twos)]
+    coeffss = [
+        begin
+            values = [
+                sum(prod(SVector{D,Complex{Int}}(mm̄[ij[d]][ab[d]] for d in 1:D)) * v[ab] for ab in CartesianIndices(twos)) for
+                v in tensor.values
+            ]
+            s = sum(SVector{D,Int}(weights[i] for i in Tuple(ij)))
+            coeffs = ash_transform(values, s, lmax)
+            coeffs
+        end for ij in CartesianIndices(twos)
+    ]
     spintensor = SpinTensor{D}(SArray{Tuple{twos...}}(coeffss), lmax)
     return spintensor::SpinTensor{D,T}
 end
@@ -152,15 +182,19 @@ function Tensor{D}(spintensor::SpinTensor{D}) where {D}
     m̄m::SVector{2,SVector{2,Complex{Int}}}
     weights = SVector{2}(+1, -1)
     twos = ntuple(d -> 2, D)
-    valuess = [begin
-                   s = sum(SVector{D,Int}(weights[i] for i in Tuple(ij)))
-                   values = ash_evaluate(spintensor.coeffs[ij], s, lmax)
-                   values
-               end
-               for ij in CartesianIndices(twos)]
-    values = [SArray{Tuple{twos...}}(sum(valuess[ij][n] * prod(SVector{D,Complex{Int}}(m̄m[ij[d]][ab[d]] for d in 1:D))
-                                         for ij in CartesianIndices(twos)) / 2^D for ab in CartesianIndices(twos))
-              for n in CartesianIndices(valuess[begin])]
+    valuess = [
+        begin
+            s = sum(SVector{D,Int}(weights[i] for i in Tuple(ij)))
+            values = ash_evaluate(spintensor.coeffs[ij], s, lmax)
+            values
+        end for ij in CartesianIndices(twos)
+    ]
+    values = [
+        SArray{Tuple{twos...}}(
+            sum(valuess[ij][n] * prod(SVector{D,Complex{Int}}(m̄m[ij[d]][ab[d]] for d in 1:D)) for ij in CartesianIndices(twos)) /
+            2^D for ab in CartesianIndices(twos)
+        ) for n in CartesianIndices(valuess[begin])
+    ]
     tensor = Tensor{D}(values, lmax)
     return tensor::Tensor{D,T}
 end
@@ -176,15 +210,16 @@ function tensor_gradient(spintensor::SpinTensor{D}) where {D}
     weights = SVector{2}(+1, -1)
     twos = ntuple(d -> 2, D)
     coeffss = spintensor.coeffs
-    dcoeffss = [begin
-                    s = sum(SVector{D,Int}(weights[ab[d]] for d in 1:D))
-                    if ab1 == 1
-                        -ash_eth(coeffss[ab], s, lmax)
-                    else
-                        -ash_ethbar(coeffss[ab], s, lmax)
-                    end
-                end
-                for ab in CartesianIndices(twos), ab1 in 1:2]
+    dcoeffss = [
+        begin
+            s = sum(SVector{D,Int}(weights[ab[d]] for d in 1:D))
+            if ab1 == 1
+                -ash_eth(coeffss[ab], s, lmax)
+            else
+                -ash_ethbar(coeffss[ab], s, lmax)
+            end
+        end for ab in CartesianIndices(twos), ab1 in 1:2
+    ]
     spintensor = SpinTensor{D + 1}(stensor(D + 1)(dcoeffss), lmax)
     return spintensor::SpinTensor{D + 1,T}
 end

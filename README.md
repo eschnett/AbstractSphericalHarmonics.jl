@@ -47,3 +47,10 @@ display(fig)
 
 - [FastSphericalHarmonics.jl](https://github.com/eschnett/FastSphericalHarmonics.jl)
 - [ssht.jl](https://github.com/eschnett/ssht.jl)
+
+## Literature
+
+- R. Gomez, L. Lehner, P. Papadopoulos, J. Winicour, *The eth
+  formalism in numerical relativity*, DOI 10.1088/0264-9381/14/4/013,
+  Class. Quantum Grav. **14** 977,
+  [arXiv:gr-qc/9702002](https://arxiv.org/abs/gr-qc/9702002).

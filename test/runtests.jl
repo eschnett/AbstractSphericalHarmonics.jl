@@ -140,9 +140,24 @@ end
 
 ################################################################################
 
+@testset "Mode indices" begin
+    for lmax in 0:20
+        nmodes = ash_nmodes(lmax)
+        for s in -4:4, l in abs(s):lmax, m in (-l):l
+            ind = ash_mode_index(s, l, m, lmax)
+            @test length(nmodes) ≡ length(ind)
+            @test all(1 ≤ ind[d] ≤ nmodes[d] for d in 1:length(nmodes))
+            l′, m′ = ash_mode_numbers(s, ind, lmax)
+            @test l′ == l && m′ == m
+        end
+    end
+end
+
 Random.seed!(100)
-modes = [(name="(s=$s,l=$l,m=$m)", spin=s, el=l, m=m, fun=(θ, ϕ) -> sYlm(s, l, m, θ, ϕ), modes=(l′, m′) -> l′ == l && m′ == m)
-         for s in -2:+2 for l in abs(s):2 for m in (-l):l]
+modes = [
+    (name="(s=$s,l=$l,m=$m)", spin=s, el=l, m=m, fun=(θ, ϕ) -> sYlm(s, l, m, θ, ϕ), modes=(l′, m′) -> l′ == l && m′ == m) for
+    s in -2:+2 for l in abs(s):2 for m in (-l):l
+]
 @testset "Simple transforms: $(mode.name)" for mode in modes
     for lmax in (mode.el):20
         sz = ash_grid_size(lmax)
@@ -158,9 +173,10 @@ modes = [(name="(s=$s,l=$l,m=$m)", spin=s, el=l, m=m, fun=(θ, ϕ) -> sYlm(s, l,
         # f = map(setvalue, CartesianIndices(sz))
 
         flm = ash_transform(f, mode.spin, lmax)
-        @test all(isapprox(flm[ash_mode_index(mode.spin, l, m, lmax)], mode.modes(l, m); atol=100eps()) for l in
-                                                                                                            abs(mode.spin):lmax
-                  for m in (-l):l)
+        @test all(
+            isapprox(flm[ash_mode_index(mode.spin, l, m, lmax)], mode.modes(l, m); atol=100eps()) for l in abs(mode.spin):lmax for
+            m in (-l):l
+        )
 
         f′ = ash_evaluate(flm, mode.spin, lmax)
         @test isapprox(f′, f; atol=1000eps())
@@ -271,8 +287,16 @@ Random.seed!(100)
 end
 
 Random.seed!(100)
-modes = [(name="(s=$s,l=$l,m=$m)", spin=s, el=l, fun=(θ, ϕ) -> sYlm(s, l, m, θ, ϕ), ðfun=(θ, ϕ) -> ðsYlm(s, l, m, θ, ϕ),
-          ð̄fun=(θ, ϕ) -> ð̄sYlm(s, l, m, θ, ϕ)) for s in 0:+2 for l in abs(s):2 for m in (-l):l]
+modes = [
+    (
+        name="(s=$s,l=$l,m=$m)",
+        spin=s,
+        el=l,
+        fun=(θ, ϕ) -> sYlm(s, l, m, θ, ϕ),
+        ðfun=(θ, ϕ) -> ðsYlm(s, l, m, θ, ϕ),
+        ð̄fun=(θ, ϕ) -> ð̄sYlm(s, l, m, θ, ϕ),
+    ) for s in 0:+2 for l in abs(s):2 for m in (-l):l
+]
 @testset "Simple derivatives (eth, eth-bar): $(mode.name)" for mode in modes
     for lmax in (mode.el):20
         sz = ash_grid_size(lmax)
@@ -343,13 +367,14 @@ Random.seed!(100)
 
         f = ash_evaluate(flm, s, lmax)
 
-        f′ = [begin
-                  θ, ϕ = ash_point_coord(ij, lmax)
-                  # We need the increased precision of `BigFloat` for `l >≈ 50`
-                  # AbstractSphericalHarmonics.sYlm(Val(s), Val(l), Val(m), θ, ϕ)
-                  Complex{Float64}(AbstractSphericalHarmonics.sYlm(Val(s), Val(l), Val(m), big(θ), big(ϕ)))
-              end
-              for ij in CartesianIndices(f)]
+        f′ = [
+            begin
+                θ, ϕ = ash_point_coord(ij, lmax)
+                # We need the increased precision of `BigFloat` for `l >≈ 50`
+                # AbstractSphericalHarmonics.sYlm(Val(s), Val(l), Val(m), θ, ϕ)
+                Complex{Float64}(AbstractSphericalHarmonics.sYlm(Val(s), Val(l), Val(m), big(θ), big(ϕ)))
+            end for ij in CartesianIndices(f)
+        ]
 
         @test f ≈ f′
     end
@@ -360,14 +385,14 @@ end
 function rand_tensor(::Val{D}, ::Type{T}, lmax::Int) where {D,T}
     sz = ash_grid_size(lmax)
     Dims = Tuple{[2 for d in 1:D]...}
-    f = randn(SArray{Dims,Complex{Float64}}, sz)
+    f = randn(SArray{Dims,T}, sz)
     return f
 end
 
 function const_tensor(::Val{D}, ::Type{T}, lmax::Int) where {D,T}
     sz = ash_grid_size(lmax)
     Dims = Tuple{[2 for d in 1:D]...}
-    α = randn(SArray{Dims,Complex{Float64}})
+    α = randn(SArray{Dims,T})
     f = fill(α, sz)
     return f
 end
@@ -417,6 +442,8 @@ end
     for lmax in 1:20
         sz = ash_grid_size(lmax)
 
+        # 1
+
         s = Tensor{0}(fill(Scalar{Complex{Float64}}(1), sz), lmax)
         ds₀ = Tensor{1}(fill(SVector{2,Complex{Float64}}(0, 0), sz), lmax)
 
@@ -426,22 +453,155 @@ end
 
         @test isapprox(ds, ds₀; atol=(lmax + 1)^2 * 1000eps())
 
-        x = Tensor{0}([begin
-                           θ, ϕ = ash_point_coord(ij, lmax)
-                           Scalar{Complex{Float64}}(sin(θ) * cos(ϕ))
-                       end
-                       for ij in CartesianIndices(sz)], lmax)
-        dx₀ = Tensor{1}([begin
-                             θ, ϕ = ash_point_coord(ij, lmax)
-                             SVector{2,Complex{Float64}}(cos(θ) * cos(ϕ), -sin(ϕ))
-                         end
-                         for ij in CartesianIndices(sz)], lmax)
+        # x
+
+        x = Tensor{0}([
+            begin
+                θ, ϕ = ash_point_coord(ij, lmax)
+                Scalar{Complex{Float64}}(sin(θ) * cos(ϕ))
+            end for ij in CartesianIndices(sz)
+        ], lmax)
+        dx₀ = Tensor{1}([
+            begin
+                θ, ϕ = ash_point_coord(ij, lmax)
+                SVector{2,Complex{Float64}}(cos(θ) * cos(ϕ), -sin(ϕ))
+            end for ij in CartesianIndices(sz)
+        ], lmax)
 
         x̃ = SpinTensor(x)
         dx̃ = tensor_gradient(x̃)
         dx = Tensor(dx̃)
 
         @test isapprox(dx, dx₀; atol=(lmax + 1)^2 * 100eps())
+
+        # y
+
+        y = Tensor{0}([
+            begin
+                θ, ϕ = ash_point_coord(ij, lmax)
+                Scalar{Complex{Float64}}(sin(θ) * sin(ϕ))
+            end for ij in CartesianIndices(sz)
+        ], lmax)
+        dy₀ = Tensor{1}([
+            begin
+                θ, ϕ = ash_point_coord(ij, lmax)
+                SVector{2,Complex{Float64}}(cos(θ) * sin(ϕ), cos(ϕ))
+            end for ij in CartesianIndices(sz)
+        ], lmax)
+
+        ỹ = SpinTensor(y)
+        dỹ = tensor_gradient(ỹ)
+        dy = Tensor(dỹ)
+
+        @test isapprox(dy, dy₀; atol=(lmax + 1)^2 * 100eps())
+
+        # z
+
+        z = Tensor{0}([
+            begin
+                θ, ϕ = ash_point_coord(ij, lmax)
+                Scalar{Complex{Float64}}(cos(θ))
+            end for ij in CartesianIndices(sz)
+        ], lmax)
+        dz₀ = Tensor{1}([
+            begin
+                θ, ϕ = ash_point_coord(ij, lmax)
+                SVector{2,Complex{Float64}}(-sin(θ), 0)
+            end for ij in CartesianIndices(sz)
+        ], lmax)
+
+        z̃ = SpinTensor(z)
+        dz̃ = tensor_gradient(z̃)
+        dz = Tensor(dz̃)
+
+        @test isapprox(dz, dz₀; atol=(lmax + 1)^2 * 100eps())
+
+        if lmax ≥ 2
+
+            # grad x
+            #
+            # q_θθ = 1
+            # q_ϕϕ = sin(ϕ)^2
+            #
+            # Γ^θ_ϕϕ = - cos(θ) sin(θ)
+            # Γ^ϕ_θϕ = cos(θ) / sin(θ)
+            # Γ^ϕ_ϕθ = cos(θ) / sin(θ)
+            #
+            # x = sin(θ) cos(ϕ)
+            # y = sin(θ) sin(ϕ)
+            # z = cos(θ)
+            #
+            # ∇x_θ = cos(θ) cos(ϕ)
+            # ∇x_ϕ = - sin(θ) sin(ϕ)
+            #
+            # ∇∇x_θθ = - sin(θ) cos(ϕ)
+            # ∇∇x_ϕϕ = - sin(θ)^3 cos(ϕ)
+
+            gradx = Tensor{1}([
+                begin
+                    θ, ϕ = ash_point_coord(ij, lmax)
+                    SVector{2,Complex{Float64}}(cos(θ) * cos(ϕ), -sin(ϕ))
+                end for ij in CartesianIndices(sz)
+            ], lmax)
+            dgradx₀ = Tensor{2}(
+                [
+                    begin
+                        θ, ϕ = ash_point_coord(ij, lmax)
+                        SMatrix{2,2,Complex{Float64}}(-sin(θ) * cos(ϕ), 0, 0, -sin(θ) * cos(ϕ))
+                    end for ij in CartesianIndices(sz)
+                ], lmax
+            )
+
+            gradx̃ = SpinTensor(gradx)
+            dgradx̃ = tensor_gradient(gradx̃)
+            dgradx = Tensor(dgradx̃)
+
+            @test isapprox(dgradx, dgradx₀; atol=(lmax + 1)^2 * 100eps())
+
+            ddgradx₀ = Tensor{3}(
+                [
+                    begin
+                        θ, ϕ = ash_point_coord(ij, lmax)
+                        SArray{Tuple{2,2,2},Complex{Float64}}(-cos(θ) * cos(ϕ), 0, 0, -cos(θ) * cos(ϕ), sin(ϕ), 0, 0, sin(ϕ))
+                    end for ij in CartesianIndices(sz)
+                ],
+                lmax,
+            )
+
+            ddgradx̃ = tensor_gradient(dgradx̃)
+            ddgradx = Tensor(ddgradx̃)
+
+            @test isapprox(ddgradx, ddgradx₀; atol=(lmax + 1)^2 * 1000eps())
+
+            # curl x
+            #
+            # curl x_θ = sin(ϕ)
+            # curl x_ϕ = cos(θ) sin(θ) cos(ϕ)
+            #
+            # ∇ curl x_θθ = - sin(θ) cos(ϕ)
+            # ∇ curl x_ϕϕ = - sin(θ)^3 cos(ϕ)
+
+            curlx = Tensor{1}([
+                begin
+                    θ, ϕ = ash_point_coord(ij, lmax)
+                    SVector{2,Complex{Float64}}(sin(ϕ), cos(θ) * cos(ϕ))
+                end for ij in CartesianIndices(sz)
+            ], lmax)
+            dcurlx₀ = Tensor{2}(
+                [
+                    begin
+                        θ, ϕ = ash_point_coord(ij, lmax)
+                        SMatrix{2,2,Complex{Float64}}(0, -sin(θ) * cos(ϕ), sin(θ) * cos(ϕ), 0)
+                    end for ij in CartesianIndices(sz)
+                ], lmax
+            )
+
+            curlx̃ = SpinTensor(curlx)
+            dcurlx̃ = tensor_gradient(curlx̃)
+            dcurlx = Tensor(dcurlx̃)
+
+            @test isapprox(dcurlx, dcurlx₀; atol=(lmax + 1)^2 * 100eps())
+        end
     end
 end
 
@@ -495,8 +655,9 @@ Random.seed!(100)
 
             dtc′ = Tensor{D + 1}(zero(dtc.values), lmax)
             @test isapprox(dtc, dtc′; atol=sqrt(eps()))
-            dtp′ = Tensor{D + 1}(map((dx, x) -> dx * x[], dtf.values, tg.values) + map((x, dx) -> x[] * dx, tf.values, dtg.values),
-                                 lmax)
+            dtp′ = Tensor{D + 1}(
+                map((dx, x) -> dx * x[], dtf.values, tg.values) + map((x, dx) -> x[] * dx, tf.values, dtg.values), lmax
+            )
             # TODO: This needs smooth input, not noise
             # if !isapprox(dtp, dtp′; atol=1 / lmax^2)
             #     @show D iter lmax
@@ -504,6 +665,32 @@ Random.seed!(100)
             # end
             @test_skip isapprox(dtp, dtp′; atol=1 / lmax^2)
         end
+    end
+end
+
+Random.seed!(100)
+@testset "Filtering tensors on the sphere D=$D" for D in 0:4
+    for lmax in 0:20
+        sz = ash_grid_size(lmax)
+        t = Tensor{D}(rand_tensor(Val(D), Complex{Float64}, lmax), lmax)
+        st = SpinTensor(t)
+        st′ = filter_modes(st)
+        # This is only a weak test
+        lfilter = lmax * 2 ÷ 3
+        for (ij, cs) in zip(CartesianIndices(st′.coeffs), st′.coeffs)
+            for l in 0:lmax, m in (-l):l
+                s = count(Tuple(ij) == 1) - count(Tuple(ij) == 2)
+                if l ≤ lfilter
+                    @test cs[ash_mode_index(s, l, m, lmax)] ≠ 0
+                else
+                    @test abs(cs[ash_mode_index(s, l, m, lmax)]) ≤ 1000eps()
+                end
+            end
+        end
+        # Ideas:
+        # - test effect of filtering on particular modes
+        # - test that filtering and derivatives commute
+        # - test that filtering is linear
     end
 end
 
@@ -522,16 +709,28 @@ Random.seed!(100)
         dq̃ = tensor_gradient(q̃)
         dq = Tensor(dq̃)
         # Γ^a_bc = q^ad (q_dc,b + q_bd,c - q_bc,d) / 2
-        Γ = Tensor{3}([SArray{Tuple{2,2,2}}(sum(qu[a, d] * (dq[d, c, b] + dq[b, d, c] - dq[b, c, d]) / 2 for d in 1:2)
-                                            for a in 1:2, b in 1:2, c in 1:2) for (qu, dq) in zip(qu.values, dq.values)], lmax)
+        Γ = Tensor{3}(
+            [
+                SArray{Tuple{2,2,2}}(
+                    sum(qu[a, d] * (dq[d, c, b] + dq[b, d, c] - dq[b, c, d]) / 2 for d in 1:2) for a in 1:2, b in 1:2, c in 1:2
+                ) for (qu, dq) in zip(qu.values, dq.values)
+            ],
+            lmax,
+        )
         # dΓ^a_bc,d
         Γ̃ = SpinTensor(Γ)
         dΓ̃ = tensor_gradient(Γ̃)
         dΓ = Tensor(dΓ̃)
         # R_ab = dΓ^c_ab,c - dΓ^c_ac,b + Γ^c_ab Γ^d_cd - Γ^c_ad Γ^d_bc
-        R = Tensor{2}([SMatrix{2,2}(sum(dΓ[c, a, b, c] - dΓ[c, a, c, b] for c in 1:2) +
-                                    sum(Γ[c, a, b] * Γ[d, c, d] - Γ[c, a, d] * Γ[d, b, c] for c in 1:2, d in 1:2)
-                                    for a in 1:2, b in 1:2) for (Γ, dΓ) in zip(Γ.values, dΓ.values)], lmax)
+        R = Tensor{2}(
+            [
+                SMatrix{2,2}(
+                    sum(dΓ[c, a, b, c] - dΓ[c, a, c, b] for c in 1:2) +
+                    sum(Γ[c, a, b] * Γ[d, c, d] - Γ[c, a, d] * Γ[d, b, c] for c in 1:2, d in 1:2) for a in 1:2, b in 1:2
+                ) for (Γ, dΓ) in zip(Γ.values, dΓ.values)
+            ],
+            lmax,
+        )
         Rsc = Tensor{0}([Scalar(sum(qu[a, b] * R[a, b] for a in 1:2, b in 1:2)) for (qu, R) in zip(qu.values, R.values)], lmax)
 
         @test isapprox(map(x -> x[], Rsc.values), zeros(sz); atol=(lmax + 1)^4 * 10eps())
