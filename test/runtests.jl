@@ -138,6 +138,21 @@ function ð̄sYlm(s::Integer, l::Integer, m::Integer, θ::Real, ϕ::Real)
     @assert false
 end
 
+function rand_tensor(::Val{D}, ::Type{T}, lmax::Int) where {D,T}
+    sz = ash_grid_size(lmax)
+    Dims = Tuple{[2 for d in 1:D]...}
+    f = randn(SArray{Dims,T}, sz)
+    return f
+end
+
+function const_tensor(::Val{D}, ::Type{T}, lmax::Int) where {D,T}
+    sz = ash_grid_size(lmax)
+    Dims = Tuple{[2 for d in 1:D]...}
+    α = randn(SArray{Dims,T})
+    f = fill(α, sz)
+    return f
+end
+
 ################################################################################
 
 @testset "Mode indices" begin
@@ -381,21 +396,6 @@ Random.seed!(100)
 end
 
 ################################################################################
-
-function rand_tensor(::Val{D}, ::Type{T}, lmax::Int) where {D,T}
-    sz = ash_grid_size(lmax)
-    Dims = Tuple{[2 for d in 1:D]...}
-    f = randn(SArray{Dims,T}, sz)
-    return f
-end
-
-function const_tensor(::Val{D}, ::Type{T}, lmax::Int) where {D,T}
-    sz = ash_grid_size(lmax)
-    Dims = Tuple{[2 for d in 1:D]...}
-    α = randn(SArray{Dims,T})
-    f = fill(α, sz)
-    return f
-end
 
 Random.seed!(100)
 @testset "Tensors on the sphere (rank $D)" for D in 0:4
@@ -678,8 +678,8 @@ Random.seed!(100)
         # This is only a weak test
         lfilter = lmax * 2 ÷ 3
         for (ij, cs) in zip(CartesianIndices(st′.coeffs), st′.coeffs)
-            for l in 0:lmax, m in (-l):l
-                s = count(Tuple(ij) == 1) - count(Tuple(ij) == 2)
+            s = count(Tuple(ij) .== 1) - count(Tuple(ij) .== 2)
+            for l in abs(s):lmax, m in (-l):l
                 if l ≤ lfilter
                     @test cs[ash_mode_index(s, l, m, lmax)] ≠ 0
                 else

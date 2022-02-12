@@ -37,9 +37,8 @@ Tensor `t_ab`: store `t[1,1] = eθ^a eθ^b t_ab`
 """ Tensor
 
 export SpinTensor
-@computed struct SpinTensor{D,T} # <: AbstractVector{T}
-    # TODO: We want `<:AbstractArray{T}` instead
-    coeffs::stensor(D, AbstractArray{T})
+struct SpinTensor{D,T} # <: AbstractVector{T}
+    coeffs::AbstractArray{<:AbstractArray{T},D}
     lmax::Int
 end
 
@@ -57,24 +56,16 @@ Note that we use a convention where `m^a m̄_a = 2`.
 """ SpinTensor
 
 # Convenience constructors
-function Tensor{D}(values::AbstractArray{<:SArray{X,T} where {X},2}, lmax::Int) where {D,T}
-    return Tensor{D,T}(values, lmax)
-end
+Tensor{D}(values::AbstractArray{<:SArray{X,T} where {X},2}, lmax::Int) where {D,T} = Tensor{D,T}(values, lmax)
 Tensor{0}(values::AbstractArray{<:Number,2}, lmax::Int) = Tensor{0}(stensor(0).(values), lmax)
 
-function SpinTensor{D}(coeffs::SArray{X,<:AbstractArray{T}} where {X}, lmax::Int) where {D,T}
-    return SpinTensor{D,T}(coeffs, lmax)
-end
-function SpinTensor{0}(coeffs::AbstractArray{<:Number,2}, lmax::Int)
-    return SpinTensor{0}(stensor(0)(coeffs), lmax)
-end
+SpinTensor{D}(coeffs::AbstractArray{<:AbstractArray{T},D}, lmax::Int) where {D,T} = SpinTensor{D,T}(coeffs, lmax)
+SpinTensor{0}(coeffs::AbstractArray{<:Number,2}, lmax::Int) = SpinTensor{0}(stensor(0)(coeffs), lmax)
 
 # Basic operations
 Base.eltype(::Tensor{D,T}) where {D,T} = T
 Base.:(==)(t1::Tensor{D}, t2::Tensor{D}) where {D} = t1.lmax == t2.lmax && t1.values == t2.values
-function Base.isapprox(t1::Tensor{D}, t2::Tensor{D}; kws...) where {D}
-    return t1.lmax == t2.lmax && isapprox(t1.values, t2.values; kws...)
-end
+Base.isapprox(t1::Tensor{D}, t2::Tensor{D}; kws...) where {D} = t1.lmax == t2.lmax && isapprox(t1.values, t2.values; kws...)
 LinearAlgebra.norm(t::Tensor; kws...) where {D} = norm(t.values; kws...)
 Base.zero(t::Tensor{D}) where {D} = Tensor{D}(zero(t.values), t.lmax)
 Base.:-(t::Tensor{D}) where {D} = Tensor{D}(-t.values, t.lmax)
@@ -92,12 +83,8 @@ Base.:*(t::Tensor{D}, a::Number) where {D} = Tensor{D}(t.values * a, t.lmax)
 Base.:/(t::Tensor{D}, a::Number) where {D} = Tensor{D}(t.values / a, t.lmax)
 
 Base.eltype(::SpinTensor{D,T}) where {D,T} = T
-function Base.:(==)(t1::SpinTensor{D}, t2::SpinTensor{D}) where {D}
-    return t1.lmax == t2.lmax && t1.coeffs == t2.coeffs
-end
-function Base.isapprox(t1::SpinTensor{D}, t2::SpinTensor{D}; kws...) where {D}
-    return t1.lmax == t2.lmax && isapprox(t1.coeffs, t2.coeffs; kws...)
-end
+Base.:(==)(t1::SpinTensor{D}, t2::SpinTensor{D}) where {D} = t1.lmax == t2.lmax && t1.coeffs == t2.coeffs
+Base.isapprox(t1::SpinTensor{D}, t2::SpinTensor{D}; kws...) where {D} = t1.lmax == t2.lmax && isapprox(t1.coeffs, t2.coeffs; kws...)
 LinearAlgebra.norm(t::SpinTensor; kws...) where {D} = norm(t.coeffs; kws...)
 Base.zero(t::SpinTensor{D}) where {D} = SpinTensor{D}(zero(t.coeffs), t.lmax)
 Base.:-(t::SpinTensor{D}) where {D} = SpinTensor{D}(-t.coefffs, t.lmax)
