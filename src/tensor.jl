@@ -56,17 +56,22 @@ Note that we use a convention where `m^a m̄_a = 2`.
 """ SpinTensor
 
 # Convenience constructors
-Tensor{D}(values::AbstractArray{<:SArray{X,T} where {X},2}, lmax::Int) where {D,T} = Tensor{D,T}(values, lmax)
+Tensor{D}(values::AbstractArray{<:SArray{X,T} where {X},2}, lmax::Int) where {D,T<:Number} = Tensor{D,T}(values, lmax)
 Tensor{0}(values::AbstractArray{<:Number,2}, lmax::Int) = Tensor{0}(stensor(0).(values), lmax)
+Tensor(values::AbstractArray{<:SArray,2}, lmax::Int) = Tensor{ndims(zero(eltype(values)))}(values, lmax)
+Tensor(values::AbstractArray{<:Number,2}, lmax::Int) = Tensor{0}(values, lmax)
 
-SpinTensor{D}(coeffs::AbstractArray{<:AbstractArray{T},D}, lmax::Int) where {D,T} = SpinTensor{D,T}(coeffs, lmax)
+SpinTensor{D}(coeffs::AbstractArray{<:AbstractArray{T},D}, lmax::Int) where {D,T<:Number} = SpinTensor{D,T}(coeffs, lmax)
 SpinTensor{0}(coeffs::AbstractArray{<:Number,2}, lmax::Int) = SpinTensor{0}(stensor(0)(coeffs), lmax)
+SpinTensor(coeffs::AbstractArray{<:AbstractArray,D}, lmax::Int) where {D} = SpinTensor{D}(coeffs, lmax)
+SpinTensor(coeffs::AbstractArray{<:Number,2}, lmax::Int) = SpinTensor{0}(coeffs, lmax)
 
 # Basic operations
 Base.eltype(::Tensor{D,T}) where {D,T} = T
 Base.:(==)(t1::Tensor{D}, t2::Tensor{D}) where {D} = t1.lmax == t2.lmax && t1.values == t2.values
 Base.isapprox(t1::Tensor{D}, t2::Tensor{D}; kws...) where {D} = t1.lmax == t2.lmax && isapprox(t1.values, t2.values; kws...)
 LinearAlgebra.norm(t::Tensor; kws...) where {D} = norm(t.values; kws...)
+Base.copy(t::Tensor{D}) where {D} = Tensor{D}(copy(t.values), t.lmax)
 Base.zero(t::Tensor{D}) where {D} = Tensor{D}(zero(t.values), t.lmax)
 Base.:-(t::Tensor{D}) where {D} = Tensor{D}(-t.values, t.lmax)
 Base.conj(t::Tensor{D}) where {D} = Tensor{D}(conj(t.values), t.lmax)
@@ -86,8 +91,9 @@ Base.eltype(::SpinTensor{D,T}) where {D,T} = T
 Base.:(==)(t1::SpinTensor{D}, t2::SpinTensor{D}) where {D} = t1.lmax == t2.lmax && t1.coeffs == t2.coeffs
 Base.isapprox(t1::SpinTensor{D}, t2::SpinTensor{D}; kws...) where {D} = t1.lmax == t2.lmax && isapprox(t1.coeffs, t2.coeffs; kws...)
 LinearAlgebra.norm(t::SpinTensor; kws...) where {D} = norm(t.coeffs; kws...)
-Base.zero(t::SpinTensor{D}) where {D} = SpinTensor{D}(zero(t.coeffs), t.lmax)
-Base.:-(t::SpinTensor{D}) where {D} = SpinTensor{D}(-t.coefffs, t.lmax)
+Base.copy(t::SpinTensor{D}) where {D} = SpinTensor{D}(copy.(t.coeffs), t.lmax)
+Base.zero(t::SpinTensor{D}) where {D} = SpinTensor{D}(zero.(t.coeffs), t.lmax)
+Base.:-(t::SpinTensor{D}) where {D} = SpinTensor{D}(-t.coeffs, t.lmax)
 Base.conj(t::SpinTensor{D}) where {D} = SpinTensor{D}(conj(t.coeffs), t.lmax)
 function Base.:+(t1::SpinTensor{D}, t2::SpinTensor{D}) where {D}
     t1.lmax == t2.lmax || throw(DimensionMismatch())
