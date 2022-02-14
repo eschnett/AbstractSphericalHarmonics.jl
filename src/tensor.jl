@@ -62,7 +62,7 @@ Tensor(values::AbstractArray{<:SArray,2}, lmax::Int) = Tensor{ndims(zero(eltype(
 Tensor(values::AbstractArray{<:Number,2}, lmax::Int) = Tensor{0}(values, lmax)
 
 SpinTensor{D}(coeffs::AbstractArray{<:AbstractArray{T},D}, lmax::Int) where {D,T<:Number} = SpinTensor{D,T}(coeffs, lmax)
-SpinTensor{0}(coeffs::AbstractArray{<:Number}, lmax::Int) = SpinTensor{0}(stensor(0)(coeffs), lmax)
+SpinTensor{0}(coeffs::AbstractArray{<:Number}, lmax::Int) = SpinTensor{0}(stensor(0)((coeffs,)), lmax)
 SpinTensor(coeffs::AbstractArray{<:AbstractArray,D}, lmax::Int) where {D} = SpinTensor{D}(coeffs, lmax)
 SpinTensor(coeffs::AbstractArray{<:Number}, lmax::Int) = SpinTensor{0}(coeffs, lmax)
 
