@@ -193,26 +193,44 @@ function Tensor{D}(spintensor::SpinTensor{D}) where {D}
 end
 Tensor(spintensor::SpinTensor{D}) where {D} = Tensor{D}(spintensor)
 
+export tensor_gradient!
+"Calculate gradient"
+function tensor_gradient!(dspintensor::SpinTensor{D1,R}, spintensor::SpinTensor{D,T}) where {D1,R<:Complex,D,T<:Complex}
+    @assert D1 == D + 1
+    lmax = spintensor.lmax
+    @assert dspintensor.lmax == lmax
+
+    weights = SVector{2}(+1, -1)
+    twos = ntuple(d -> 2, D)
+    coeffs = spintensor.coeffs
+    dcoeffs = dspintensor.coeffs
+    for ab in CartesianIndices(twos)
+        s = sum(SVector{D,Int}(weights[ab[d]] for d in 1:D))
+        ash_eth!(dcoeffs[ab, 1], coeffs[ab], s, lmax)
+        dcoeffs[ab, 1] .*= -1
+        ash_ethbar!(dcoeffs[ab, 2], coeffs[ab], s, lmax)
+        dcoeffs[ab, 2] .*= -1
+    end
+    return dspintensor::SpinTensor{D + 1,R}
+end
+
 export tensor_gradient
 "Calculate gradient"
-function tensor_gradient(spintensor::SpinTensor{D}) where {D}
-    T = eltype(spintensor)
-    @assert T <: Complex
-    spintensor::SpinTensor{D,T}
+function tensor_gradient(spintensor::SpinTensor{D,T}) where {D,T<:Complex}
     lmax = spintensor.lmax
     weights = SVector{2}(+1, -1)
     twos = ntuple(d -> 2, D)
-    coeffss = spintensor.coeffs
-    dcoeffss = [
+    coeffs = spintensor.coeffs
+    dcoeffs = [
         begin
             s = sum(SVector{D,Int}(weights[ab[d]] for d in 1:D))
             if ab1 == 1
-                -ash_eth(coeffss[ab], s, lmax)
+                -ash_eth(coeffs[ab], s, lmax)
             else
-                -ash_ethbar(coeffss[ab], s, lmax)
+                -ash_ethbar(coeffs[ab], s, lmax)
             end
         end for ab in CartesianIndices(twos), ab1 in 1:2
     ]
-    spintensor = SpinTensor{D + 1}(stensor(D + 1)(dcoeffss), lmax)
-    return spintensor::SpinTensor{D + 1,T}
+    dspintensor = SpinTensor{D + 1}(stensor(D + 1)(dcoeffs), lmax)
+    return dspintensor::SpinTensor{D + 1,T}
 end

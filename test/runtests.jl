@@ -635,6 +635,16 @@ Random.seed!(100)
 
         @test dts ≈ dtf + α * dtg
 
+        dstf′ = zero(dstf)
+        dstg′ = zero(dstg)
+        dsts′ = zero(dsts)
+        tensor_gradient!(dstf′, stf)
+        tensor_gradient!(dstg′, stg)
+        tensor_gradient!(dsts′, sts)
+        @test dstf′ ≈ dstf
+        @test dstg′ ≈ dstg
+        @test dsts′ ≈ dsts
+
         if D == 0
             # Constant function (derivative is zero)
             c = const_tensor(Val(D), Complex{Float64}, lmax)

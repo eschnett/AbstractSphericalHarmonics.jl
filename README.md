@@ -54,3 +54,13 @@ display(fig)
   formalism in numerical relativity*, DOI 10.1088/0264-9381/14/4/013,
   Class. Quantum Grav. **14** 977,
   [arXiv:gr-qc/9702002](https://arxiv.org/abs/gr-qc/9702002).
+
+- Florian Beyer, Boris Daszuta, Jörg Frauendiener, Ben Whale,
+  "Numerical evolutions of fields on the 2-sphere using a spectral
+  method based on spin-weighted spherical harmonics", [arXiv:1308.4729
+  [physics.comp-ph]](https://arxiv.org/abs/1308.4729)
+
+- Florian Beyer, Boris Daszuta, Jörg Frauendiener, "A spectral method
+  for half-integer spin fields based on spin-weighted spherical
+  harmonics", [arXiv:1502.07427
+  [gr-qc]](https://arxiv.org/abs/1502.07427)
