@@ -46,7 +46,7 @@ display(fig)
 ## Supported packages
 
 - [FastSphericalHarmonics.jl](https://github.com/eschnett/FastSphericalHarmonics.jl)
-- [ssht.jl](https://github.com/eschnett/ssht.jl)
+- [SSHT.jl](https://github.com/eschnett/SSHT.jl)
 
 ## Literature
 
