@@ -878,7 +878,8 @@ Random.seed!(100)
                               map((x, dg) -> x[] * dg, tfb.values, dtgb.values), grid)
             # f, g ~ lcut, d(fg) ~ lmax lcut², plus an lmax² factor for the
             # conditioning of the transforms
-            @test isapprox(dtpb, dtpb′; atol=(lmax + 1)^4 * (lcut + 1) * 100eps())
+            # (float to avoid Int32 overflow on 32-bit systems)
+            @test isapprox(dtpb, dtpb′; atol=float(lmax + 1)^4 * (lcut + 1) * 100eps())
         end
     end
 end
@@ -961,7 +962,7 @@ Random.seed!(100)
         )
         Rsc = Tensor{0}([Scalar(sum(qu[a, b] * R[a, b] for a in 1:2, b in 1:2)) for (qu, R) in zip(qu.values, R.values)], grid)
 
-        @test isapprox(map(x -> x[], Rsc.values), zeros(sz); atol=(lmax + 1)^4 * 10eps())
+        @test isapprox(map(x -> x[], Rsc.values), zeros(sz); atol=float(lmax + 1)^4 * 10eps())
 
         # println("q:")
         # display(map(x -> chop.(x), q.values))
