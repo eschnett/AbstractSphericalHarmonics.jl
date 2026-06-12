@@ -17,10 +17,10 @@ using AbstractSphericalHarmonics
 lmax = 40
 
 phis = ash_phis(lmax)
-thetas = ahs_thetas(lmax)
+thetas = ash_thetas(lmax)
 
 flm = zeros(Complex{Float64}, ash_nmodes(lmax));
-flm[ash_mode_index(+1, 1, +1)] = 1;
+flm[ash_mode_index(+1, 1, +1, lmax)] = 1;
 
 f = ash_evaluate(flm, +1, lmax);
 
@@ -34,7 +34,7 @@ Axis(fig[1, 1]; title="real(f)")
 Axis(fig[1, 3]; title="imag(f)")
 hm = heatmap!(fig[1, 1], phis, thetas, real.(ash_grid_as_phi_theta(f)); colormap=:magma)
 Colorbar(fig[1, 2], hm)
-hm = heatmap!(fig[1, 3], phis, thetas, imag.(ash_grid_as_phi_thetaf)); colormap=:magma)
+hm = heatmap!(fig[1, 3], phis, thetas, imag.(ash_grid_as_phi_theta(f)); colormap=:magma)
 Colorbar(fig[1, 4], hm)
 rowsize!(fig.layout, 1, Aspect(1, 1 / 2))
 
