@@ -3,6 +3,8 @@ using LinearAlgebra: norm
 using Random
 using StaticArrays
 using Test
+import FastSphericalHarmonics
+import SSHT
 
 const bitsign = AbstractSphericalHarmonics.bitsign
 
@@ -10,14 +12,14 @@ chop(x) = abs2(x) < 100eps(x) ? zero(x) : x
 chop(x::Complex) = Complex(chop(real(x)), chop(imag(x)))
 chop(x::SArray) = chop.(x)
 
-function integrate(f::AbstractMatrix, g::AbstractMatrix, lmax::Integer)
-    sz = ash_grid_size(lmax)
+function integrate(f::AbstractMatrix, g::AbstractMatrix, grid::SphereGrid)
+    sz = ash_grid_size(grid)
     @assert size(f) == size(g) == sz
 
     s = zero(eltype(f)) * zero(eltype(g)) * zero(Float64)
     for pt in CartesianIndices(sz)
-        theta, phi = ash_point_coord(pt, lmax)
-        dtheta, dphi = ash_point_delta(pt, lmax)
+        theta, phi = ash_point_coord(grid, pt)
+        dtheta, dphi = ash_point_delta(grid, pt)
         s += conj(f[pt]) * g[pt] * sin(theta) * dtheta * dphi
     end
 
@@ -138,15 +140,15 @@ function ð̄sYlm(s::Integer, l::Integer, m::Integer, θ::Real, ϕ::Real)
     @assert false
 end
 
-function rand_tensor(::Val{D}, ::Type{T}, lmax::Int) where {D,T}
-    sz = ash_grid_size(lmax)
+function rand_tensor(::Val{D}, ::Type{T}, grid::SphereGrid) where {D,T}
+    sz = ash_grid_size(grid)
     Dims = Tuple{[2 for d in 1:D]...}
     f = randn(SArray{Dims,T}, sz)
     return f
 end
 
-function const_tensor(::Val{D}, ::Type{T}, lmax::Int) where {D,T}
-    sz = ash_grid_size(lmax)
+function const_tensor(::Val{D}, ::Type{T}, grid::SphereGrid) where {D,T}
+    sz = ash_grid_size(grid)
     Dims = Tuple{[2 for d in 1:D]...}
     α = randn(SArray{Dims,T})
     f = fill(α, sz)
@@ -155,14 +157,24 @@ end
 
 ################################################################################
 
+backends = [
+    (name="DriscollHealy (SSHT)", mkgrid=DriscollHealyGrid, maxl=100),
+    (name="Equiangular (FastSphericalHarmonics)", mkgrid=EquiangularGrid, maxl=32),
+]
+
+@testset "Backend: $(backend.name)" for backend in backends
+mkgrid = backend.mkgrid
+maxl = backend.maxl
+
 @testset "Mode indices" begin
     for lmax in 0:20
-        nmodes = ash_nmodes(lmax)
+        grid = mkgrid(lmax)
+        nmodes = ash_nmodes(grid)
         for s in -4:4, l in abs(s):lmax, m in (-l):l
-            ind = ash_mode_index(s, l, m, lmax)
+            ind = ash_mode_index(grid, s, l, m)
             @test length(nmodes) ≡ length(ind)
             @test all(1 ≤ ind[d] ≤ nmodes[d] for d in 1:length(nmodes))
-            l′, m′ = ash_mode_numbers(s, ind, lmax)
+            l′, m′ = ash_mode_numbers(grid, s, ind)
             @test l′ == l && m′ == m
         end
     end
@@ -175,25 +187,26 @@ modes = [
 ]
 @testset "Simple transforms: $(mode.name)" for mode in modes
     for lmax in (mode.el):20
-        sz = ash_grid_size(lmax)
+        grid = mkgrid(lmax)
+        sz = ash_grid_size(grid)
         f = Array{Complex{Float64}}(undef, sz)
         for ij in CartesianIndices(sz)
-            θ, ϕ = ash_point_coord(ij, lmax)
+            θ, ϕ = ash_point_coord(grid, ij)
             f[ij] = mode.fun(θ, ϕ)
         end
         # function setvalue(ij::CartesianIndex{2})
-        #     θ, ϕ = ash_point_coord(ij, lmax)
+        #     θ, ϕ = ash_point_coord(grid, ij)
         #     return Complex{Float64}(mode.fun(θ, ϕ))
         # end
         # f = map(setvalue, CartesianIndices(sz))
 
-        flm = ash_transform(f, mode.spin, lmax)
+        flm = ash_transform(grid, f, mode.spin)
         @test all(
-            isapprox(flm[ash_mode_index(mode.spin, l, m, lmax)], mode.modes(l, m); atol=100eps()) for l in abs(mode.spin):lmax for
+            isapprox(flm[ash_mode_index(grid, mode.spin, l, m)], mode.modes(l, m); atol=100eps()) for l in abs(mode.spin):lmax for
             m in (-l):l
         )
 
-        f′ = ash_evaluate(flm, mode.spin, lmax)
+        f′ = ash_evaluate(grid, flm, mode.spin)
         @test isapprox(f′, f; atol=1000eps())
     end
 end
@@ -201,9 +214,10 @@ end
 Random.seed!(100)
 @testset "Parity" begin
     for iter in 1:20
-        lmax = rand(0:100)
-        sz = ash_grid_size(lmax)
-        nmodes = ash_nmodes(lmax)
+        lmax = rand(0:maxl)
+        grid = mkgrid(lmax)
+        sz = ash_grid_size(grid)
+        nmodes = ash_nmodes(grid)
 
         s = rand(-4:4)
         abs(s) ≤ lmax || continue
@@ -211,13 +225,13 @@ Random.seed!(100)
         m = rand((-l):l)
 
         flm = zeros(Complex{Float64}, nmodes)
-        flm[ash_mode_index(s, l, m, lmax)] = 1
+        flm[ash_mode_index(grid, s, l, m)] = 1
 
         flm′ = zeros(Complex{Float64}, nmodes)
-        flm′[ash_mode_index(-s, l, -m, lmax)] = 1
+        flm′[ash_mode_index(grid, -s, l, -m)] = 1
 
-        f = ash_evaluate(flm, s, lmax)
-        f′ = ash_evaluate(flm′, -s, lmax)
+        f = ash_evaluate(grid, flm, s)
+        f′ = ash_evaluate(grid, flm′, -s)
 
         # Phase: conj(sYlm) = (-1)^(s+m) (-s)Yl(-m)
         @test conj(f) ≈ bitsign(s + m) * f′
@@ -227,9 +241,10 @@ end
 Random.seed!(100)
 @testset "Linearity" begin
     for iter in 1:20
-        lmax = rand(0:100)
-        sz = ash_grid_size(lmax)
-        nmodes = ash_nmodes(lmax)
+        lmax = rand(0:maxl)
+        grid = mkgrid(lmax)
+        sz = ash_grid_size(grid)
+        nmodes = ash_nmodes(grid)
 
         spin = rand(-4:4)
 
@@ -238,9 +253,9 @@ Random.seed!(100)
         α = randn(Complex{Float64})
         h = f + α * g
 
-        flm = ash_transform(f, spin, lmax)
-        glm = ash_transform(g, spin, lmax)
-        hlm = ash_transform(h, spin, lmax)
+        flm = ash_transform(grid, f, spin)
+        glm = ash_transform(grid, g, spin)
+        hlm = ash_transform(grid, h, spin)
 
         if !(flm + α * glm ≈ hlm)
             @show iter lmax sz nmodes spin
@@ -256,9 +271,9 @@ Random.seed!(100)
         glm = randn(Complex{Float64}, nmodes)
         hlm = flm + α * glm
 
-        f = ash_evaluate(flm, spin, lmax)
-        g = ash_evaluate(glm, spin, lmax)
-        h = ash_evaluate(hlm, spin, lmax)
+        f = ash_evaluate(grid, flm, spin)
+        g = ash_evaluate(grid, glm, spin)
+        h = ash_evaluate(grid, hlm, spin)
 
         @test f + α * g ≈ h
     end
@@ -267,8 +282,9 @@ end
 Random.seed!(100)
 @testset "Orthonormality" begin
     for iter in 1:20
-        lmax = rand(0:100)
-        nmodes = ash_nmodes(lmax)
+        lmax = rand(0:maxl)
+        grid = mkgrid(lmax)
+        nmodes = ash_nmodes(grid)
 
         smax = min(4, lmax ÷ 2)
         spin = rand((-smax):smax)
@@ -282,22 +298,22 @@ Random.seed!(100)
         lg = rand(abs(spin):(lmax - lf))
         mg = rand((-lg):lg)
 
-        flm[ash_mode_index(spin, lf, mf, lmax)] = 1
-        glm[ash_mode_index(spin, lg, mg, lmax)] = 1
+        flm[ash_mode_index(grid, spin, lf, mf)] = 1
+        glm[ash_mode_index(grid, spin, lg, mg)] = 1
 
-        f = ash_evaluate(flm, spin, lmax)
-        g = ash_evaluate(glm, spin, lmax)
+        f = ash_evaluate(grid, flm, spin)
+        g = ash_evaluate(grid, glm, spin)
 
-        @test isapprox(integrate(f, f, lmax), 1; atol=20 / lmax^2)
-        @test isapprox(integrate(f, g, lmax), (lf == lg) * (mf == mg); atol=1 / lmax^2)
+        @test isapprox(integrate(f, f, grid), 1; atol=20 / lmax^2)
+        @test isapprox(integrate(f, g, grid), (lf == lg) * (mf == mg); atol=1 / lmax^2)
 
         h = conj(f) .* f
-        hlm = ash_transform(h, 0, lmax)
-        @test isapprox(hlm[ash_mode_index(0, 0, 0, lmax)], sqrt(1 / 4π); atol=sqrt(eps()))
+        hlm = ash_transform(grid, h, 0)
+        @test isapprox(hlm[ash_mode_index(grid, 0, 0, 0)], sqrt(1 / 4π); atol=sqrt(eps()))
 
         h = conj(f) .* g
-        hlm = ash_transform(h, 0, lmax)
-        @test isapprox(hlm[ash_mode_index(0, 0, 0, lmax)], (lf == lg) * (mf == mg) * sqrt(1 / 4π); atol=sqrt(eps()))
+        hlm = ash_transform(grid, h, 0)
+        @test isapprox(hlm[ash_mode_index(grid, 0, 0, 0)], (lf == lg) * (mf == mg) * sqrt(1 / 4π); atol=sqrt(eps()))
     end
 end
 
@@ -314,25 +330,26 @@ modes = [
 ]
 @testset "Simple derivatives (eth, eth-bar): $(mode.name)" for mode in modes
     for lmax in (mode.el):20
-        sz = ash_grid_size(lmax)
+        grid = mkgrid(lmax)
+        sz = ash_grid_size(grid)
         f = Array{Complex{Float64}}(undef, sz)
         ðf₀ = Array{Complex{Float64}}(undef, sz)
         ð̄f₀ = Array{Complex{Float64}}(undef, sz)
         for ij in CartesianIndices(sz)
-            θ, ϕ = ash_point_coord(ij, lmax)
+            θ, ϕ = ash_point_coord(grid, ij)
             f[ij] = mode.fun(θ, ϕ)
             ðf₀[ij] = mode.ðfun(θ, ϕ)
             ð̄f₀[ij] = mode.ð̄fun(θ, ϕ)
         end
 
-        flm = ash_transform(f, mode.spin, lmax)
+        flm = ash_transform(grid, f, mode.spin)
 
-        ðflm = ash_eth(flm, mode.spin, lmax)
-        ðf = ash_evaluate(ðflm, mode.spin + 1, lmax)
+        ðflm = ash_eth(grid, flm, mode.spin)
+        ðf = ash_evaluate(grid, ðflm, mode.spin + 1)
         @test isapprox(ðf, ðf₀; atol=10000eps())
 
-        ð̄flm = ash_ethbar(flm, mode.spin, lmax)
-        ð̄f = ash_evaluate(ð̄flm, mode.spin - 1, lmax)
+        ð̄flm = ash_ethbar(grid, flm, mode.spin)
+        ð̄f = ash_evaluate(grid, ð̄flm, mode.spin - 1)
         @test isapprox(ð̄f, ð̄f₀; atol=10000eps())
     end
 end
@@ -340,24 +357,25 @@ end
 Random.seed!(100)
 @testset "Eigenvectors of Laplacian" begin
     for iter in 1:20
-        lmax = rand(0:100)
-        nmodes = ash_nmodes(lmax)
+        lmax = rand(0:maxl)
+        grid = mkgrid(lmax)
+        nmodes = ash_nmodes(grid)
 
         flm = zeros(Complex{Float64}, nmodes)
 
         l = rand(0:lmax)
         m = rand((-l):l)
-        flm[ash_mode_index(0, l, m, lmax)] = 1
+        flm[ash_mode_index(grid, 0, l, m)] = 1
 
-        ðflm = ash_eth(flm, 0, lmax)
-        ð̄ðflm = ash_ethbar(ðflm, +1, lmax)
+        ðflm = ash_eth(grid, flm, 0)
+        ð̄ðflm = ash_ethbar(grid, ðflm, +1)
 
-        ð̄flm = ash_ethbar(flm, 0, lmax)
-        ðð̄flm = ash_eth(ð̄flm, -1, lmax)
+        ð̄flm = ash_ethbar(grid, flm, 0)
+        ðð̄flm = ash_eth(grid, ð̄flm, -1)
 
-        f = ash_evaluate(flm, 0, lmax)
-        ð̄ðf = ash_evaluate(ð̄ðflm, 0, lmax)
-        ðð̄f = ash_evaluate(ðð̄flm, 0, lmax)
+        f = ash_evaluate(grid, flm, 0)
+        ð̄ðf = ash_evaluate(grid, ð̄ðflm, 0)
+        ðð̄f = ash_evaluate(grid, ðð̄flm, 0)
 
         @test isapprox(ð̄ðf, -l * (l + 1) * f; atol=(lmax + 1)^2 * 100eps())
         @test isapprox(ðð̄f, -l * (l + 1) * f; atol=(lmax + 1)^2 * 100eps())
@@ -369,8 +387,9 @@ end
 Random.seed!(100)
 @testset "Arbitrary modes" begin
     for iter in 1:20
-        lmax = rand(0:100)
-        nmodes = ash_nmodes(lmax)
+        lmax = rand(0:maxl)
+        grid = mkgrid(lmax)
+        nmodes = ash_nmodes(grid)
 
         flm = zeros(Complex{Float64}, nmodes)
 
@@ -378,13 +397,13 @@ Random.seed!(100)
         abs(s) ≤ lmax || continue
         l = rand(abs(s):lmax)
         m = rand((-l):l)
-        flm[ash_mode_index(s, l, m, lmax)] = 1
+        flm[ash_mode_index(grid, s, l, m)] = 1
 
-        f = ash_evaluate(flm, s, lmax)
+        f = ash_evaluate(grid, flm, s)
 
         f′ = [
             begin
-                θ, ϕ = ash_point_coord(ij, lmax)
+                θ, ϕ = ash_point_coord(grid, ij)
                 # We need the increased precision of `BigFloat` for `l >≈ 50`
                 # AbstractSphericalHarmonics.sYlm(Val(s), Val(l), Val(m), θ, ϕ)
                 Complex{Float64}(AbstractSphericalHarmonics.sYlm(Val(s), Val(l), Val(m), big(θ), big(ϕ)))
@@ -400,11 +419,12 @@ end
 Random.seed!(100)
 @testset "Tensors on the sphere (rank $D)" for D in 0:4
     for iter in 1:20
-        lmax = rand(0:100)
+        lmax = rand(0:maxl)
+        grid = mkgrid(lmax)
 
-        f = rand_tensor(Val(D), Complex{Float64}, lmax)
+        f = rand_tensor(Val(D), Complex{Float64}, grid)
 
-        t = Tensor{D}(f, lmax)
+        t = Tensor{D}(f, grid)
         st = SpinTensor{D}(t)
         t′ = Tensor{D}(st)
         st′ = SpinTensor{D}(t′)
@@ -418,17 +438,18 @@ end
 Random.seed!(100)
 @testset "Linearity of tensors on the sphere (rank $D)" for D in 0:4
     for iter in 1:20
-        lmax = rand(0:100)
+        lmax = rand(0:maxl)
+        grid = mkgrid(lmax)
 
-        f = rand_tensor(Val(D), Complex{Float64}, lmax)
-        g = rand_tensor(Val(D), Complex{Float64}, lmax)
+        f = rand_tensor(Val(D), Complex{Float64}, grid)
+        g = rand_tensor(Val(D), Complex{Float64}, grid)
         α = randn(Complex{Float64})
 
         h = f + α * g
 
-        t = Tensor{D}(f, lmax)
-        u = Tensor{D}(g, lmax)
-        v = Tensor{D}(h, lmax)
+        t = Tensor{D}(f, grid)
+        u = Tensor{D}(g, grid)
+        v = Tensor{D}(h, grid)
 
         st = SpinTensor{D}(t)
         su = SpinTensor{D}(u)
@@ -440,12 +461,13 @@ end
 
 @testset "Simple derivatives of tensors on the sphere" begin
     for lmax in 1:20
-        sz = ash_grid_size(lmax)
+        grid = mkgrid(lmax)
+        sz = ash_grid_size(grid)
 
         # 1
 
-        s = Tensor{0}(fill(Scalar{Complex{Float64}}(1), sz), lmax)
-        ds₀ = Tensor{1}(fill(SVector{2,Complex{Float64}}(0, 0), sz), lmax)
+        s = Tensor{0}(fill(Scalar{Complex{Float64}}(1), sz), grid)
+        ds₀ = Tensor{1}(fill(SVector{2,Complex{Float64}}(0, 0), sz), grid)
 
         s̃ = SpinTensor(s)
         ds̃ = tensor_gradient(s̃)
@@ -457,16 +479,16 @@ end
 
         x = Tensor{0}([
             begin
-                θ, ϕ = ash_point_coord(ij, lmax)
+                θ, ϕ = ash_point_coord(grid, ij)
                 Scalar{Complex{Float64}}(sin(θ) * cos(ϕ))
             end for ij in CartesianIndices(sz)
-        ], lmax)
+        ], grid)
         dx₀ = Tensor{1}([
             begin
-                θ, ϕ = ash_point_coord(ij, lmax)
+                θ, ϕ = ash_point_coord(grid, ij)
                 SVector{2,Complex{Float64}}(cos(θ) * cos(ϕ), -sin(ϕ))
             end for ij in CartesianIndices(sz)
-        ], lmax)
+        ], grid)
 
         x̃ = SpinTensor(x)
         dx̃ = tensor_gradient(x̃)
@@ -478,16 +500,16 @@ end
 
         y = Tensor{0}([
             begin
-                θ, ϕ = ash_point_coord(ij, lmax)
+                θ, ϕ = ash_point_coord(grid, ij)
                 Scalar{Complex{Float64}}(sin(θ) * sin(ϕ))
             end for ij in CartesianIndices(sz)
-        ], lmax)
+        ], grid)
         dy₀ = Tensor{1}([
             begin
-                θ, ϕ = ash_point_coord(ij, lmax)
+                θ, ϕ = ash_point_coord(grid, ij)
                 SVector{2,Complex{Float64}}(cos(θ) * sin(ϕ), cos(ϕ))
             end for ij in CartesianIndices(sz)
-        ], lmax)
+        ], grid)
 
         ỹ = SpinTensor(y)
         dỹ = tensor_gradient(ỹ)
@@ -499,16 +521,16 @@ end
 
         z = Tensor{0}([
             begin
-                θ, ϕ = ash_point_coord(ij, lmax)
+                θ, ϕ = ash_point_coord(grid, ij)
                 Scalar{Complex{Float64}}(cos(θ))
             end for ij in CartesianIndices(sz)
-        ], lmax)
+        ], grid)
         dz₀ = Tensor{1}([
             begin
-                θ, ϕ = ash_point_coord(ij, lmax)
+                θ, ϕ = ash_point_coord(grid, ij)
                 SVector{2,Complex{Float64}}(-sin(θ), 0)
             end for ij in CartesianIndices(sz)
-        ], lmax)
+        ], grid)
 
         z̃ = SpinTensor(z)
         dz̃ = tensor_gradient(z̃)
@@ -539,17 +561,17 @@ end
 
             gradx = Tensor{1}([
                 begin
-                    θ, ϕ = ash_point_coord(ij, lmax)
+                    θ, ϕ = ash_point_coord(grid, ij)
                     SVector{2,Complex{Float64}}(cos(θ) * cos(ϕ), -sin(ϕ))
                 end for ij in CartesianIndices(sz)
-            ], lmax)
+            ], grid)
             dgradx₀ = Tensor{2}(
                 [
                     begin
-                        θ, ϕ = ash_point_coord(ij, lmax)
+                        θ, ϕ = ash_point_coord(grid, ij)
                         SMatrix{2,2,Complex{Float64}}(-sin(θ) * cos(ϕ), 0, 0, -sin(θ) * cos(ϕ))
                     end for ij in CartesianIndices(sz)
-                ], lmax
+                ], grid
             )
 
             gradx̃ = SpinTensor(gradx)
@@ -561,11 +583,11 @@ end
             ddgradx₀ = Tensor{3}(
                 [
                     begin
-                        θ, ϕ = ash_point_coord(ij, lmax)
+                        θ, ϕ = ash_point_coord(grid, ij)
                         SArray{Tuple{2,2,2},Complex{Float64}}(-cos(θ) * cos(ϕ), 0, 0, -cos(θ) * cos(ϕ), sin(ϕ), 0, 0, sin(ϕ))
                     end for ij in CartesianIndices(sz)
                 ],
-                lmax,
+                grid,
             )
 
             ddgradx̃ = tensor_gradient(dgradx̃)
@@ -583,17 +605,17 @@ end
 
             curlx = Tensor{1}([
                 begin
-                    θ, ϕ = ash_point_coord(ij, lmax)
+                    θ, ϕ = ash_point_coord(grid, ij)
                     SVector{2,Complex{Float64}}(sin(ϕ), cos(θ) * cos(ϕ))
                 end for ij in CartesianIndices(sz)
-            ], lmax)
+            ], grid)
             dcurlx₀ = Tensor{2}(
                 [
                     begin
-                        θ, ϕ = ash_point_coord(ij, lmax)
+                        θ, ϕ = ash_point_coord(grid, ij)
                         SMatrix{2,2,Complex{Float64}}(0, -sin(θ) * cos(ϕ), sin(θ) * cos(ϕ), 0)
                     end for ij in CartesianIndices(sz)
-                ], lmax
+                ], grid
             )
 
             curlx̃ = SpinTensor(curlx)
@@ -608,18 +630,19 @@ end
 Random.seed!(100)
 @testset "Derivatives of tensors on the sphere (rank $D)" for D in 0:3
     for iter in 1:20
-        lmax = rand(0:100)
+        lmax = rand(0:maxl)
+        grid = mkgrid(lmax)
 
-        f = rand_tensor(Val(D), Complex{Float64}, lmax)
-        g = rand_tensor(Val(D), Complex{Float64}, lmax)
+        f = rand_tensor(Val(D), Complex{Float64}, grid)
+        g = rand_tensor(Val(D), Complex{Float64}, grid)
         α = randn(Complex{Float64})
 
         # Linear combination
         s = f + α * g
 
-        tf = Tensor{D}(f, lmax)
-        tg = Tensor{D}(g, lmax)
-        ts = Tensor{D}(s, lmax)
+        tf = Tensor{D}(f, grid)
+        tg = Tensor{D}(g, grid)
+        ts = Tensor{D}(s, grid)
 
         stf = SpinTensor{D}(tf)
         stg = SpinTensor{D}(tg)
@@ -647,12 +670,12 @@ Random.seed!(100)
 
         if D == 0
             # Constant function (derivative is zero)
-            c = const_tensor(Val(D), Complex{Float64}, lmax)
+            c = const_tensor(Val(D), Complex{Float64}, grid)
             # Product of two functions
             p = map(.*, f, g)
 
-            tc = Tensor{D}(c, lmax)
-            tp = Tensor{D}(p, lmax)
+            tc = Tensor{D}(c, grid)
+            tp = Tensor{D}(p, grid)
 
             stc = SpinTensor{D}(tc)
             stp = SpinTensor{D}(tp)
@@ -663,10 +686,10 @@ Random.seed!(100)
             dtc = Tensor{D + 1}(dstc)
             dtp = Tensor{D + 1}(dstp)
 
-            dtc′ = Tensor{D + 1}(zero(dtc.values), lmax)
+            dtc′ = Tensor{D + 1}(zero(dtc.values), grid)
             @test isapprox(dtc, dtc′; atol=sqrt(eps()))
             dtp′ = Tensor{D + 1}(
-                map((dx, x) -> dx * x[], dtf.values, tg.values) + map((x, dx) -> x[] * dx, tf.values, dtg.values), lmax
+                map((dx, x) -> dx * x[], dtf.values, tg.values) + map((x, dx) -> x[] * dx, tf.values, dtg.values), grid
             )
             # TODO: This needs smooth input, not noise
             # if !isapprox(dtp, dtp′; atol=1 / lmax^2)
@@ -681,8 +704,9 @@ end
 Random.seed!(100)
 @testset "Filtering tensors on the sphere D=$D" for D in 0:4
     for lmax in 0:20
-        sz = ash_grid_size(lmax)
-        t = Tensor{D}(rand_tensor(Val(D), Complex{Float64}, lmax), lmax)
+        grid = mkgrid(lmax)
+        sz = ash_grid_size(grid)
+        t = Tensor{D}(rand_tensor(Val(D), Complex{Float64}, grid), grid)
         st = SpinTensor(t)
         st′ = filter_modes(st)
         # This is only a weak test
@@ -691,9 +715,9 @@ Random.seed!(100)
             s = count(Tuple(ij) .== 1) - count(Tuple(ij) .== 2)
             for l in abs(s):lmax, m in (-l):l
                 if l ≤ lfilter
-                    @test cs[ash_mode_index(s, l, m, lmax)] ≠ 0
+                    @test cs[ash_mode_index(grid, s, l, m)] ≠ 0
                 else
-                    @test abs(cs[ash_mode_index(s, l, m, lmax)]) ≤ 1000eps()
+                    @test abs(cs[ash_mode_index(grid, s, l, m)]) ≤ 1000eps()
                 end
             end
         end
@@ -707,11 +731,12 @@ end
 Random.seed!(100)
 @testset "Calculate Ricci scalar" begin
     for iter in 1:20
-        lmax = rand(2:100)
-        sz = ash_grid_size(lmax)
+        lmax = rand(2:maxl)
+        grid = mkgrid(lmax)
+        sz = ash_grid_size(grid)
 
         # q_ab = (1, 0, 0, 1)
-        q = Tensor{2}(fill(SMatrix{2,2,Complex{Float64}}(1, 0, 0, 1), sz), lmax)
+        q = Tensor{2}(fill(SMatrix{2,2,Complex{Float64}}(1, 0, 0, 1), sz), grid)
         q̃ = SpinTensor(q)
         # qu^ab
         qu = q
@@ -725,7 +750,7 @@ Random.seed!(100)
                     sum(qu[a, d] * (dq[d, c, b] + dq[b, d, c] - dq[b, c, d]) / 2 for d in 1:2) for a in 1:2, b in 1:2, c in 1:2
                 ) for (qu, dq) in zip(qu.values, dq.values)
             ],
-            lmax,
+            grid,
         )
         # dΓ^a_bc,d
         Γ̃ = SpinTensor(Γ)
@@ -739,9 +764,9 @@ Random.seed!(100)
                     sum(Γ[c, a, b] * Γ[d, c, d] - Γ[c, a, d] * Γ[d, b, c] for c in 1:2, d in 1:2) for a in 1:2, b in 1:2
                 ) for (Γ, dΓ) in zip(Γ.values, dΓ.values)
             ],
-            lmax,
+            grid,
         )
-        Rsc = Tensor{0}([Scalar(sum(qu[a, b] * R[a, b] for a in 1:2, b in 1:2)) for (qu, R) in zip(qu.values, R.values)], lmax)
+        Rsc = Tensor{0}([Scalar(sum(qu[a, b] * R[a, b] for a in 1:2, b in 1:2)) for (qu, R) in zip(qu.values, R.values)], grid)
 
         @test isapprox(map(x -> x[], Rsc.values), zeros(sz); atol=(lmax + 1)^4 * 10eps())
 
@@ -757,5 +782,59 @@ Random.seed!(100)
         # println("Rsc:")
         # display(map(x -> chop.(x)[], Rsc.values))
         # println()
+    end
+end
+
+end # backend loop
+
+################################################################################
+
+Random.seed!(100)
+@testset "Cross-backend consistency" begin
+    for iter in 1:10
+        lmax = rand(0:32)
+        grids = (DriscollHealyGrid(lmax), EquiangularGrid(lmax))
+
+        s = rand(-4:4)
+        # need 2 max(|s|, l) ≤ lmax for exact product quadrature below
+        abs(s) ≤ lmax ÷ 2 || continue
+
+        # random coefficients, band-limited to lmax÷2 so that quadrature of
+        # products is exact on both grids (the equiangular Fejér rule is
+        # exact only up to degree lmax)
+        flm = zeros(Complex{Float64}, ash_nmodes(grids[1]))
+        for l in abs(s):max(abs(s), lmax ÷ 2), m in (-l):l
+            flm[ash_mode_index(grids[1], s, l, m)] = randn(Complex{Float64})
+        end
+
+        # evaluate on each grid, transform back: coefficients must agree
+        flm1 = ash_transform(grids[1], ash_evaluate(grids[1], flm, s), s)
+        flm2 = ash_transform(grids[2], ash_evaluate(grids[2], flm, s), s)
+        @test maximum(abs.(flm1 - flm2)) ≤ (lmax + 1)^2 * 1000eps()
+
+        # quadrature of |f|² agrees between the backends and with Parseval
+        n2 = sum(abs2, flm)
+        for grid in grids
+            f = ash_evaluate(grid, flm, s)
+            q = 0.0
+            for ij in CartesianIndices(f)
+                θ, _ = ash_point_coord(grid, ij)
+                dθ, dϕ = ash_point_delta(grid, ij)
+                q += abs2(f[ij]) * sin(θ) * dθ * dϕ
+            end
+            @test isapprox(q, n2; atol=(lmax + 1)^2 * 1000eps() * max(1, n2))
+        end
+    end
+
+    # the same analytic field on both grids has the same coefficients
+    for (s, l, m) in ((0, 1, 0), (1, 2, -1), (-2, 3, 2), (2, 4, 0))
+        lmax = 8
+        coeffss = map((DriscollHealyGrid(lmax), EquiangularGrid(lmax))) do grid
+            sz = ash_grid_size(grid)
+            f = [Complex{Float64}(AbstractSphericalHarmonics.sYlm(Val(s), Val(l), Val(m), ash_point_coord(grid, ij)...)) for ij in CartesianIndices(sz)]
+            ash_transform(grid, f, s)
+        end
+        @test isapprox(coeffss[1], coeffss[2]; atol=10000eps())
+        @test isapprox(coeffss[1][ash_mode_index(DriscollHealyGrid(lmax), s, l, m)], 1; atol=10000eps())
     end
 end
