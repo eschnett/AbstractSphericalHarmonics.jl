@@ -71,6 +71,11 @@ orthonormal coordinate dyad of the unit sphere (pole-regular), and
 `tensor_gradient` is the covariant derivative with respect to the unit
 round sphere.  These types carry their grid and work with any backend.
 
+Note (changed in version 1.1.0): `conj(::SpinTensor)` returns the
+spectral representation of the conjugated field, i.e.
+`Tensor(conj(st)) ≈ conj(Tensor(st))` — not an elementwise `conj` of the
+coefficient arrays.
+
 ## Adding a backend
 
 Implement, in a package extension, methods for a new `SphereGrid`

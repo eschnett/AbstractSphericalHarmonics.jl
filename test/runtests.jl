@@ -6,7 +6,8 @@ using Test
 import FastSphericalHarmonics
 import SSHT
 
-const bitsign = AbstractSphericalHarmonics.bitsign
+const ASH = AbstractSphericalHarmonics
+const bitsign = ASH.bitsign
 
 chop(x) = abs2(x) < 100eps(x) ? zero(x) : x
 chop(x::Complex) = Complex(chop(real(x)), chop(imag(x)))
@@ -156,6 +157,70 @@ function const_tensor(::Val{D}, ::Type{T}, grid::SphereGrid) where {D,T}
 end
 
 ################################################################################
+# Pointwise sYlm evaluation (backend-independent)
+
+Random.seed!(100)
+@testset "sYlm accuracy: small l vs closed forms" begin
+    # Closed forms from the table above, including the poles
+    for s in -2:2, l in abs(s):2, m in (-l):l, θ in (0.0, 0.3, π / 2, π - 0.3, 1.0π), ϕ in (0.0, 0.7, 2.1)
+        @test isapprox(ASH.sYlm(s, l, m, θ, ϕ), sYlm(s, l, m, θ, ϕ); atol=10eps())
+    end
+    # Independent naive implementation (exact in BigFloat, breaks at poles)
+    for s in -4:4, l in abs(s):10, m in (-l):l
+        θ, ϕ = π * (0.05 + 0.9 * rand()), 2π * rand()
+        @test isapprox(ASH.sYlm(s, l, m, θ, ϕ), Complex{Float64}(ASH.sYlm0(Val(s), Val(l), Val(m), big(θ), big(ϕ)));
+                       atol=100eps())
+    end
+end
+
+Random.seed!(100)
+@testset "sYlm accuracy: large l" begin
+    # The reference itself suffers cancellation of ~2l bits; give it headroom
+    bigref(s, l, m, θ, ϕ) = setprecision(BigFloat, 2l + 512) do
+        Complex{Float64}(ASH.sYlm0(Val(s), Val(l), Val(m), big(θ), big(ϕ)))
+    end
+    for l in (40, 60, 80, 200, 400)
+        s = rand(-4:4)
+        for m in unique((0, 1, -1, l, -l, l ÷ 2, -l ÷ 2)), θ in (0.01, 1.234, π - 0.01)
+            ϕ = 2π * rand()
+            @test isapprox(ASH.sYlm(s, l, m, θ, ϕ), bigref(s, l, m, θ, ϕ); atol=l * 1000eps(), rtol=l * 1000eps())
+        end
+    end
+    # Parity at large l
+    for l in (100, 300), iter in 1:5
+        s = rand(-4:4)
+        m = rand((-l):l)
+        θ, ϕ = π * rand(), 2π * rand()
+        @test conj(ASH.sYlm(s, l, m, θ, ϕ)) ≈ bitsign(s + m) * ASH.sYlm(-s, l, -m, θ, ϕ)
+    end
+    # Generic over the argument type
+    let θ = big(1.234), ϕ = big(0.567)
+        v = ASH.sYlm(2, 300, 150, θ, ϕ)
+        @test v isa Complex{BigFloat}
+        vref = setprecision(() -> ASH.sYlm0(Val(2), Val(300), Val(150), θ, ϕ), BigFloat, 4096)
+        @test abs(v - vref) ≤ 1000 * eps(BigFloat)
+    end
+end
+
+@testset "sYlm at the poles" begin
+    for s in -3:3, l in (abs(s), 10, 100)
+        for m in unique((-l, -s, 0, s, l))
+            abs(m) ≤ l || continue
+            f0 = ASH.sYlm(s, l, m, 0.0, 0.3)
+            @test isfinite(f0)
+            # Only m = -s is nonzero at θ = 0 (exact: sin(0/2) is exactly zero)
+            m ≠ -s && @test f0 == 0
+        end
+    end
+end
+
+@testset "sYlm error paths" begin
+    @test_throws DomainError ASH.sYlm(3, 2, 0, 1.0, 1.0)
+    @test_throws DomainError ASH.sYlm(0, 2, 5, 1.0, 1.0)
+    @test_throws DomainError ASH.sYlm(0, 2, -3, 1.0, 1.0)
+end
+
+################################################################################
 
 backends = [
     (name="DriscollHealy (SSHT)", mkgrid=DriscollHealyGrid, maxl=100),
@@ -177,6 +242,13 @@ maxl = backend.maxl
             l′, m′ = ash_mode_numbers(grid, s, ind)
             @test l′ == l && m′ == m
         end
+    end
+
+    let grid = mkgrid(4)
+        @test_throws DomainError ash_mode_index(grid, 0, 5, 0)   # l > lmax
+        @test_throws DomainError ash_mode_index(grid, 2, 1, 0)   # l < |s|
+        @test_throws DomainError ash_mode_index(grid, 0, 2, 3)   # |m| > l
+        @test_throws DimensionMismatch Tensor{1}(fill(SMatrix{2,2,Complex{Float64}}(1, 0, 0, 1), ash_grid_size(grid)), grid)
     end
 end
 
@@ -304,8 +376,8 @@ Random.seed!(100)
         f = ash_evaluate(grid, flm, spin)
         g = ash_evaluate(grid, glm, spin)
 
-        @test isapprox(integrate(f, f, grid), 1; atol=20 / lmax^2)
-        @test isapprox(integrate(f, g, grid), (lf == lg) * (mf == mg); atol=1 / lmax^2)
+        @test isapprox(integrate(f, f, grid), 1; atol=20 / (lmax + 1)^2)
+        @test isapprox(integrate(f, g, grid), (lf == lg) * (mf == mg); atol=1 / (lmax + 1)^2)
 
         h = conj(f) .* f
         hlm = ash_transform(grid, h, 0)
@@ -382,6 +454,51 @@ Random.seed!(100)
     end
 end
 
+Random.seed!(100)
+@testset "Spin-s Laplacian and eth commutator" begin
+    # ð̄ð ₛYₗₘ = -(l-s)(l+s+1) ₛYₗₘ,  ðð̄ ₛYₗₘ = -(l+s)(l-s+1) ₛYₗₘ,
+    # hence (ð̄ð - ðð̄) f = 2s f for any spin-s field f.
+    # These are exact mode-space identities.
+    for iter in 1:20
+        lmax = rand(0:maxl)
+        grid = mkgrid(lmax)
+        nmodes = ash_nmodes(grid)
+
+        s = rand(-4:4)
+        abs(s) ≤ lmax || continue
+
+        flm = randn(Complex{Float64}, nmodes)
+        # zero the unused l < |s| entries
+        for l in 0:(abs(s) - 1), m in (-l):l
+            flm[CartesianIndex(l^2 + l + m + 1)] = 0
+        end
+
+        ð̄ðflm = ash_ethbar(grid, ash_eth(grid, flm, s), s + 1)
+        ðð̄flm = ash_eth(grid, ash_ethbar(grid, flm, s), s - 1)
+
+        for l in abs(s):lmax, m in (-l):l
+            ind = ash_mode_index(grid, s, l, m)
+            @test ð̄ðflm[ind] ≈ -(l - s) * (l + s + 1) * flm[ind]
+            @test ðð̄flm[ind] ≈ -(l + s) * (l - s + 1) * flm[ind]
+        end
+        @test ð̄ðflm - ðð̄flm ≈ 2 * s * flm
+    end
+end
+
+@testset "Quadrature weights" begin
+    # ∮ 1 = Σ sin(θ) dθ dϕ = 4π
+    for lmax in (0, 1, 2, 5, 20, maxl)
+        grid = mkgrid(lmax)
+        q = 0.0
+        for ij in CartesianIndices(ash_grid_size(grid))
+            θ, _ = ash_point_coord(grid, ij)
+            dθ, dϕ = ash_point_delta(grid, ij)
+            q += sin(θ) * dθ * dϕ
+        end
+        @test isapprox(q, 4π; rtol=1000eps())
+    end
+end
+
 ################################################################################
 
 Random.seed!(100)
@@ -404,9 +521,7 @@ Random.seed!(100)
         f′ = [
             begin
                 θ, ϕ = ash_point_coord(grid, ij)
-                # We need the increased precision of `BigFloat` for `l >≈ 50`
-                # AbstractSphericalHarmonics.sYlm(Val(s), Val(l), Val(m), θ, ϕ)
-                Complex{Float64}(AbstractSphericalHarmonics.sYlm(Val(s), Val(l), Val(m), big(θ), big(ϕ)))
+                ASH.sYlm(s, l, m, θ, ϕ)
             end for ij in CartesianIndices(f)
         ]
 
@@ -456,6 +571,64 @@ Random.seed!(100)
         sv = SpinTensor{D}(v)
 
         @test sv ≈ st + α * su
+    end
+end
+
+Random.seed!(100)
+@testset "Conjugation of tensors on the sphere (rank $D)" for D in 0:4
+    for iter in 1:10
+        lmax = rand(0:min(20, maxl))
+        grid = mkgrid(lmax)
+
+        t = Tensor{D}(rand_tensor(Val(D), Complex{Float64}, grid), grid)
+        u = Tensor{D}(rand_tensor(Val(D), Complex{Float64}, grid), grid)
+        α = randn(Complex{Float64})
+
+        st = SpinTensor{D}(t)
+        su = SpinTensor{D}(u)
+
+        # conj represents the conjugated field
+        @test isapprox(Tensor{D}(conj(st)), conj(Tensor{D}(st)); atol=(lmax + 1)^2 * 100eps())
+        # involution
+        @test conj(conj(st)) ≈ st
+        # antilinearity
+        @test conj(st + α * su) ≈ conj(st) + conj(α) * conj(su)
+    end
+
+    if D == 0
+        # Single-mode coefficient check: conj(f)_{l,m} = (-1)^m conj(f_{l,-m})
+        lmax = 8
+        grid = mkgrid(lmax)
+        nmodes = ash_nmodes(grid)
+        for (l, m) in ((0, 0), (3, 2), (5, -4), (8, 8))
+            c = 0.7 + 1.3im
+            coeffs = zeros(Complex{Float64}, nmodes)
+            coeffs[ash_mode_index(grid, 0, l, m)] = c
+            expected = zeros(Complex{Float64}, nmodes)
+            expected[ash_mode_index(grid, 0, l, -m)] = bitsign(m) * conj(c)
+            @test conj(SpinTensor(coeffs, grid)).coeffs[] == expected
+        end
+    end
+end
+
+Random.seed!(100)
+@testset "Real-valued tensors on the sphere (rank $D)" for D in 0:2
+    for iter in 1:5
+        lmax = rand(0:min(20, maxl))
+        grid = mkgrid(lmax)
+
+        f = rand_tensor(Val(D), Float64, grid)
+        t = Tensor{D}(f, grid)
+        tc = Tensor{D}(map(x -> Complex.(x), f), grid)
+
+        st = SpinTensor{D}(t)
+        stc = SpinTensor{D}(tc)
+        @test st ≈ stc
+
+        # round trip: the projected real field reproduces itself
+        t′ = Tensor{D}(st)
+        st′ = SpinTensor{D}(t′)
+        @test st′ ≈ st
     end
 end
 
@@ -671,32 +844,41 @@ Random.seed!(100)
         if D == 0
             # Constant function (derivative is zero)
             c = const_tensor(Val(D), Complex{Float64}, grid)
-            # Product of two functions
-            p = map(.*, f, g)
 
             tc = Tensor{D}(c, grid)
-            tp = Tensor{D}(p, grid)
-
             stc = SpinTensor{D}(tc)
-            stp = SpinTensor{D}(tp)
-
             dstc = tensor_gradient(stc)
-            dstp = tensor_gradient(stp)
-
             dtc = Tensor{D + 1}(dstc)
-            dtp = Tensor{D + 1}(dstp)
 
             dtc′ = Tensor{D + 1}(zero(dtc.values), grid)
             @test isapprox(dtc, dtc′; atol=sqrt(eps()))
-            dtp′ = Tensor{D + 1}(
-                map((dx, x) -> dx * x[], dtf.values, tg.values) + map((x, dx) -> x[] * dx, tf.values, dtg.values), grid
-            )
-            # TODO: This needs smooth input, not noise
-            # if !isapprox(dtp, dtp′; atol=1 / lmax^2)
-            #     @show D iter lmax
-            #     @show maximum(map(x -> maximum(abs.(x)), dtp.values - dtp′.values))
-            # end
-            @test_skip isapprox(dtp, dtp′; atol=1 / lmax^2)
+
+            # Product rule (Leibniz). The inputs must be band-limited to
+            # lmax÷2 so that their product is band-limited to lmax and hence
+            # exactly representable on the grid.
+            lcut = lmax ÷ 2
+            fblm = zeros(Complex{Float64}, ash_nmodes(grid))
+            gblm = zeros(Complex{Float64}, ash_nmodes(grid))
+            for l in 0:lcut, m in (-l):l
+                fblm[ash_mode_index(grid, 0, l, m)] = randn(Complex{Float64})
+                gblm[ash_mode_index(grid, 0, l, m)] = randn(Complex{Float64})
+            end
+            fb = ash_evaluate(grid, fblm, 0)
+            gb = ash_evaluate(grid, gblm, 0)
+
+            tfb = Tensor{0}(fb, grid)
+            tgb = Tensor{0}(gb, grid)
+            tpb = Tensor{0}(fb .* gb, grid)
+
+            dtfb = Tensor{1}(tensor_gradient(SpinTensor{0}(tfb)))
+            dtgb = Tensor{1}(tensor_gradient(SpinTensor{0}(tgb)))
+            dtpb = Tensor{1}(tensor_gradient(SpinTensor{0}(tpb)))
+
+            dtpb′ = Tensor{1}(map((df, x) -> df * x[], dtfb.values, tgb.values) +
+                              map((x, dg) -> x[] * dg, tfb.values, dtgb.values), grid)
+            # f, g ~ lcut, d(fg) ~ lmax lcut², plus an lmax² factor for the
+            # conditioning of the transforms
+            @test isapprox(dtpb, dtpb′; atol=(lmax + 1)^4 * (lcut + 1) * 100eps())
         end
     end
 end
@@ -721,10 +903,21 @@ Random.seed!(100)
                 end
             end
         end
-        # Ideas:
-        # - test effect of filtering on particular modes
-        # - test that filtering and derivatives commute
-        # - test that filtering is linear
+        # Default cutoff is the two-thirds rule
+        @test filter_modes(st) == filter_modes(st; lfilter=lmax * 2 ÷ 3)
+        # Filtering at lmax is the identity
+        @test filter_modes(st; lfilter=lmax) == st
+        # Filtering is a projection
+        @test filter_modes(filter_modes(st)) == filter_modes(st)
+        # Filtering is linear
+        su = SpinTensor(Tensor{D}(rand_tensor(Val(D), Complex{Float64}, grid), grid))
+        α = randn(Complex{Float64})
+        @test filter_modes(st + α * su) ≈ filter_modes(st) + α * filter_modes(su)
+        # Filtering commutes with the gradient (the eth operators are
+        # diagonal in l)
+        if D ≤ 2
+            @test filter_modes(tensor_gradient(st)) ≈ tensor_gradient(filter_modes(st))
+        end
     end
 end
 
